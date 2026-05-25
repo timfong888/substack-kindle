@@ -27,7 +27,23 @@ from urllib.parse import urlsplit
 
 # Trusted Amazon sender domains and approval-link hosts.
 AMAZON_SENDER_DOMAINS = frozenset(
-    {"amazon.com", "amazonses.com", "kindle.com", "amazon.co.uk", "amazon.ca"}
+    {
+        "amazon.com",
+        "amazonses.com",
+        "kindle.com",
+        "amazon.co.uk",
+        "amazon.ca",
+        "amazon.de",
+        "amazon.fr",
+        "amazon.es",
+        "amazon.it",
+        "amazon.nl",
+        "amazon.co.jp",
+        "amazon.in",
+        "amazon.com.au",
+        "amazon.com.br",
+        "amazon.com.mx",
+    }
 )
 AMAZON_LINK_DOMAINS = AMAZON_SENDER_DOMAINS
 
@@ -63,9 +79,21 @@ def _looks_like_approval(message: InboundEmail) -> bool:
     return any(hint in haystack for hint in _APPROVAL_HINTS)
 
 
+def _url_has_approval_hint(url: str) -> bool:
+    lowered = url.lower()
+    return any(hint in lowered for hint in _APPROVAL_HINTS)
+
+
 def _amazon_approval_link(body: str) -> str | None:
+    """Return the Amazon-hosted URL that is the approval link.
+
+    Fail-closed: an Amazon transactional email also carries logo-image and footer
+    URLs on Amazon domains, so we require the URL itself to carry an approval hint
+    (approve/confirm/verify). If none qualifies we return None rather than risk
+    surfacing a logo or account-management link for the customer to click.
+    """
     for url in _URL_RE.findall(body):
-        if _host_in(url, AMAZON_LINK_DOMAINS):
+        if _host_in(url, AMAZON_LINK_DOMAINS) and _url_has_approval_hint(url):
             return url
     return None
 

@@ -44,14 +44,33 @@ class ClickSpy:
 
 
 def test_detects_pending_approval_in_window_for_authentic_amazon_mail():
-    spy = ClickSpy()
     pending = detect_pending_approval(
         _amazon_email(), window_open=True, is_authentic=_authentic
     )
     assert pending is not None
     assert pending.approval_url == "https://www.amazon.com/gp/f.html?approve=abc123"
-    # Detection must NEVER click on its own (one-tap requires explicit confirmation).
-    assert spy.clicked == []
+
+
+def test_detection_has_no_click_capability():
+    # One-tap is structural: detection takes no click hook, so it cannot click.
+    import inspect
+
+    assert "click" not in inspect.signature(detect_pending_approval).parameters
+
+
+def test_picks_approval_link_not_logo_or_footer_in_multi_url_body():
+    body = (
+        '<img src="https://images.amazon.com/logo.png">'
+        '<a href="https://www.amazon.com/">Amazon</a>'
+        '<a href="https://www.amazon.com/gp/sendtokindle/approve?tok=xyz">Approve</a>'
+        '<a href="https://www.amazon.com/account">Manage account</a>'
+    )
+    pending = detect_pending_approval(
+        _amazon_email(body=body), window_open=True, is_authentic=_authentic
+    )
+    assert pending is not None
+    # The logo image and footer/account links must not be surfaced.
+    assert pending.approval_url == "https://www.amazon.com/gp/sendtokindle/approve?tok=xyz"
 
 
 def test_no_action_outside_onboarding_window():
