@@ -67,6 +67,22 @@ def test_incompressible_payload_over_cap_is_split_not_dropped():
     assert b"".join(plan.parts) == payload
 
 
+def test_compressible_payload_is_zipped_then_split_when_still_over_cap():
+    # Compresses well, but the cap is so small that even the zipped bytes don't
+    # fit in one message -> the zip is split across parts (compressed + multi-part).
+    payload = b"A" * 50_000
+    cap = 40
+    plan = plan_send(payload, max_message_bytes=cap, filename="job.epub")
+    assert plan.compressed is True
+    assert plan.content_type == "application/zip"
+    assert plan.total_parts > 1
+    for part in plan.parts:
+        assert _b64_len(part) <= cap
+    # Reassembling the parts gives the zip; unzipping recovers the original payload.
+    with zipfile.ZipFile(BytesIO(b"".join(plan.parts))) as zf:
+        assert zf.read("job.epub") == payload
+
+
 def test_every_part_is_within_cap_for_various_sizes():
     cap = 512
     for size in (10, 600, 5000, 20000):
