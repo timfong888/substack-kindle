@@ -15,10 +15,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-# Common newsletter sequence markers: "#42", "Issue 7", "No. 13", "Edition 5".
+# Common newsletter sequence markers: "Issue 7", "No. 13", "Edition 5", "#42".
+# Semantic markers are tried before a bare "#N" so "tweet #7 - Issue 15" yields 15.
 _ISSUE_PATTERNS = (
-    re.compile(r"#\s*(\d+)"),
     re.compile(r"\b(?:issue|no\.?|edition|vol\.?|volume)\s*#?\s*(\d+)\b", re.IGNORECASE),
+    re.compile(r"#\s*(\d+)"),
 )
 
 
@@ -64,7 +65,7 @@ def collect_newsletters(
     """Return collected newsletters from approved senders within the window.
 
     Senders are matched case-insensitively; the window is inclusive of both
-    bounds; input order is preserved.
+    bounds; input order is preserved. All datetimes must be timezone-aware.
     """
     approved = {s.lower() for s in approved_sources}
     collected: list[CollectedNewsletter] = []
@@ -72,6 +73,12 @@ def collect_newsletters(
         sender = message.sender.lower()
         if sender not in approved:
             continue
+        if message.date_sent.tzinfo is None:
+            # Comparing naive vs aware datetimes raises TypeError; fail loudly instead.
+            raise ValueError(
+                f"message {message.message_id!r} has a timezone-naive date_sent; "
+                "all datetimes must be timezone-aware"
+            )
         if not (window_start <= message.date_sent <= window_end):
             continue
         collected.append(

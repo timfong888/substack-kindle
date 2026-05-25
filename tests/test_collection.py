@@ -8,6 +8,8 @@ Acceptance:
 
 from datetime import UTC, datetime
 
+import pytest
+
 from substack_kindle.collection import (
     IncomingMessage,
     collect_newsletters,
@@ -34,6 +36,18 @@ def test_parse_issue_number_common_patterns():
     assert parse_issue_number("No. 13 — Friday") == 13
     assert parse_issue_number("Edition 5") == 5
     assert parse_issue_number("Just a title") is None
+
+
+def test_parse_issue_number_prefers_semantic_marker_over_bare_hash():
+    # A bare "#N" elsewhere in the subject must not win over the real issue marker.
+    assert parse_issue_number("See tweet #7 — Issue 15") == 15
+
+
+def test_timezone_naive_date_raises():
+    naive = datetime(2026, 5, 3, 9, 0)  # no tzinfo
+    messages = [IncomingMessage("m1", "alice@a.example", naive, "hi")]
+    with pytest.raises(ValueError, match="timezone-naive"):
+        collect_newsletters(messages, APPROVED, *WINDOW, id_fn=_fake_id)
 
 
 def test_collects_only_approved_senders():
