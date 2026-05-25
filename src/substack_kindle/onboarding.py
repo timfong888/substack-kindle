@@ -77,7 +77,9 @@ class OnboardingFlow:
             raise ValueError("connect Gmail before entering the Kindle email")
         if not kindle_email or not kindle_email.strip():
             raise ValueError("kindle_email must not be empty")
-        self.kindle_email = kindle_email
+        # Store the stripped form so downstream delivery/address matching never
+        # sees surrounding whitespace from the onboarding input.
+        self.kindle_email = kindle_email.strip()
 
     def whitelist_instructions(self) -> WhitelistInstructions:
         if self.kindle_email is None:

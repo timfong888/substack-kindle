@@ -72,6 +72,15 @@ def test_empty_kindle_email_is_rejected():
     assert flow.next_step() is OnboardingStep.ENTER_KINDLE_EMAIL
 
 
+def test_whitespace_padded_kindle_email_is_stored_stripped():
+    # A padded-but-valid address must be persisted without surrounding spaces,
+    # or downstream delivery/Kindle address matching silently fails.
+    flow = _flow()
+    flow.connect_gmail()
+    flow.set_kindle_email("  reader@kindle.com  ")
+    assert flow.kindle_email == "reader@kindle.com"
+
+
 def test_seed_with_zero_sources_does_not_complete_onboarding():
     flow = OnboardingFlow(
         whitelist_email=WHITELIST,
