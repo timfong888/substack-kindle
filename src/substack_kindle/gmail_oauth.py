@@ -45,7 +45,9 @@ class OAuthCredentials:
 class GmailTransport(Protocol):
     """Transport that performs Gmail REST calls. ``method`` is the HTTP verb."""
 
-    def request(self, method: str, path: str, *, token_ref: str, params: dict | None = None): ...
+    def request(
+        self, method: str, path: str, *, token_ref: str, params: dict | None = None
+    ) -> dict: ...
 
 
 class ReadOnlyGmailClient:
@@ -69,11 +71,25 @@ class ReadOnlyGmailClient:
         return self._credentials.scopes
 
     def list_message_ids(self, query: str | None = None) -> list[str]:
-        params = {"q": query} if query else None
-        result = self._transport.request(
-            "GET", "/users/me/messages", token_ref=self._credentials.token_ref, params=params
-        )
-        return [m["id"] for m in result.get("messages", [])]
+        """Return all matching message ids, following nextPageToken to the end."""
+        ids: list[str] = []
+        page_token: str | None = None
+        while True:
+            params: dict = {}
+            if query:
+                params["q"] = query
+            if page_token:
+                params["pageToken"] = page_token
+            result = self._transport.request(
+                "GET",
+                "/users/me/messages",
+                token_ref=self._credentials.token_ref,
+                params=params or None,
+            )
+            ids.extend(m["id"] for m in result.get("messages", []))
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                return ids
 
     def get_message(self, message_id: str) -> dict:
         return self._transport.request(

@@ -33,6 +33,24 @@ class SpyTransport:
         return self._message
 
 
+class PagedTransport:
+    """Returns message ids across multiple pages via nextPageToken."""
+
+    def __init__(self, pages):
+        self.pages = pages  # list of lists of ids
+        self.page_tokens_seen = []
+
+    def request(self, method, path, *, token_ref, params=None):
+        token = (params or {}).get("pageToken")
+        self.page_tokens_seen.append(token)
+        index = 0 if token is None else int(token)
+        ids = self.pages[index]
+        result = {"messages": [{"id": i} for i in ids]}
+        if index + 1 < len(self.pages):
+            result["nextPageToken"] = str(index + 1)
+        return result
+
+
 def _creds(scopes=(GMAIL_READONLY_SCOPE,), token_ref="secretref://gmail/cust-1"):
     return OAuthCredentials(token_ref=token_ref, scopes=tuple(scopes))
 
@@ -75,6 +93,14 @@ def test_reads_issue_only_get_requests():
     assert {method for method, _path, _tok in transport.calls} == {"GET"}
 
 
+def test_list_message_ids_follows_pagination():
+    transport = PagedTransport([["a", "b"], ["c", "d"], ["e"]])
+    client = ReadOnlyGmailClient(_creds(), transport)
+    assert client.list_message_ids() == ["a", "b", "c", "d", "e"]
+    # First page has no token; subsequent pages follow nextPageToken.
+    assert transport.page_tokens_seen == [None, "1", "2"]
+
+
 def test_list_and_get_return_expected_shapes():
     transport = SpyTransport(messages=[{"id": "m1"}, {"id": "m2"}], message={"id": "m1", "x": 1})
     client = ReadOnlyGmailClient(_creds(), transport)
@@ -104,7 +130,7 @@ def test_credentials_repr_redacts_token_ref():
 
 
 def test_module_has_no_hardcoded_credentials():
-    with open(gmail_oauth.__file__) as fh:
+    with open(gmail_oauth.__file__, encoding="utf-8") as fh:
         source = fh.read()
     # No real OAuth token/client-secret literals committed.
     assert "ya29." not in source
