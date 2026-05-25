@@ -7,6 +7,8 @@ Acceptance:
   Claude Agent SDK without a rewrite.
 """
 
+import re
+
 import pytest
 
 import substack_kindle.runner as runner_mod
@@ -65,7 +67,8 @@ def test_module_has_no_hardcoded_credentials():
     with open(runner_mod.__file__, encoding="utf-8") as fh:
         source = fh.read().lower()
     assert "tok-" not in source
-    assert "postmark_server_token =" not in source.replace(" ", " ")  # no literal assignment
+    # Normalize whitespace so an irregularly-spaced literal assignment is still caught.
+    assert "postmark_server_token =" not in re.sub(r"\s+", " ", source)
 
 
 def test_runner_has_no_loop_construct():
