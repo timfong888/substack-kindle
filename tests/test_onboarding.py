@@ -62,6 +62,30 @@ def test_cannot_show_whitelist_before_kindle_set():
         flow.whitelist_instructions()
 
 
+def test_empty_kindle_email_is_rejected():
+    flow = _flow()
+    flow.connect_gmail()
+    with pytest.raises(ValueError):
+        flow.set_kindle_email("")
+    with pytest.raises(ValueError):
+        flow.set_kindle_email("   ")
+    assert flow.next_step() is OnboardingStep.ENTER_KINDLE_EMAIL
+
+
+def test_seed_with_zero_sources_does_not_complete_onboarding():
+    flow = OnboardingFlow(
+        whitelist_email=WHITELIST,
+        connect_gmail=lambda: "gmail-client",
+        register_senders=lambda label: [],  # label matched no senders
+    )
+    flow.connect_gmail()
+    flow.set_kindle_email("reader@kindle.com")
+    flow.whitelist_instructions()
+    with pytest.raises(ValueError):
+        flow.seed_sources(label="Newsletters")
+    assert flow.is_complete() is False
+
+
 def test_seed_sources_uses_label_gesture_and_records_sources():
     flow = _flow(register_result=("a@x.example", "b@y.example"))
     flow.connect_gmail()

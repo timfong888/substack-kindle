@@ -75,6 +75,8 @@ class OnboardingFlow:
     def set_kindle_email(self, kindle_email: str) -> None:
         if not self.gmail_connected:
             raise ValueError("connect Gmail before entering the Kindle email")
+        if not kindle_email or not kindle_email.strip():
+            raise ValueError("kindle_email must not be empty")
         self.kindle_email = kindle_email
 
     def whitelist_instructions(self) -> WhitelistInstructions:
@@ -93,7 +95,12 @@ class OnboardingFlow:
     def seed_sources(self, *, label: str) -> list[str]:
         if not self.whitelist_shown:
             raise ValueError("show the whitelist instructions before seeding sources")
-        self.approved_sources = self.register_senders(label)
+        sources = self.register_senders(label)
+        if not sources:
+            # Zero approved sources means nothing would ever be delivered — don't
+            # let the flow report completion in that broken state.
+            raise ValueError("no approved sources were registered; label must match a sender")
+        self.approved_sources = sources
         self.sources_seeded = True
         return self.approved_sources
 
