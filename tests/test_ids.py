@@ -68,6 +68,13 @@ def test_equivalent_instants_collapse_to_one_id(equivalent_date):
     )
 
 
+def test_naive_datetime_is_assumed_utc():
+    # A naive datetime (e.g. datetime.utcnow()) must collapse to the same ID as
+    # the equivalent UTC-aware value, or the dedup guarantee silently breaks.
+    naive = datetime(2026, 5, 20, 9, 0, 0)
+    assert newsletter_id(SENDER, naive, SUBJECT) == newsletter_id(SENDER, DATE, SUBJECT)
+
+
 def test_unparseable_date_is_stable_and_does_not_raise():
     a = newsletter_id(SENDER, "not-a-date", SUBJECT)
     b = newsletter_id(SENDER, "not-a-date", SUBJECT)

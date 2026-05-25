@@ -37,17 +37,19 @@ def _coerce_datetime(value: str | datetime) -> datetime | None:
 def _normalize_date(date_sent: str | datetime) -> str:
     """Canonicalize a date so equivalent instants collapse to one string.
 
-    All recognized forms (ISO 8601 incl. ``Z``, RFC 2822) parse to a datetime;
-    timezone-aware values are normalized to UTC so the same instant expressed in
-    different notations or offsets yields one ID. Unparseable values fall back to
-    a stripped string so the function never raises in the ID path.
+    All recognized forms (ISO 8601 incl. ``Z``, RFC 2822) parse to a datetime
+    and are normalized to UTC so the same instant expressed in different
+    notations or offsets yields one ID. Naive datetimes (no tzinfo, e.g. from
+    ``datetime.utcnow()``) are assumed to be UTC so they collapse to the same ID
+    as the equivalent aware value. Unparseable values fall back to a stripped
+    string so the function never raises in the ID path.
     """
     dt = _coerce_datetime(date_sent)
     if dt is None:
         return str(date_sent).strip()
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(UTC)
-    return dt.isoformat()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat()
 
 
 def _canonical(sender: str, date_sent: str | datetime, subject: str) -> tuple[str, str, str]:
