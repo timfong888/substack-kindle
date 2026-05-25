@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    # Added per-story as the pipeline is built (parsing, EPUB, Postmark, Gmail).
+    # Deterministic Markdown->XHTML + one-EPUB-per-job assembly with TOC (SAT-246).
+    "markdown>=3.5",
+    "ebooklib>=0.18",
 ]
 
 [project.optional-dependencies]
