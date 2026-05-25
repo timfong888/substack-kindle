@@ -10,10 +10,12 @@ fetch remote images).
 
 from __future__ import annotations
 
+import html as _html
 import mimetypes
 import os
 import tempfile
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import markdown as _markdown
 from bs4 import BeautifulSoup
@@ -50,7 +52,9 @@ def _apply_image_policy(
         src = img.get("src")
         data = images.get(src) if src else None
         if data is not None and used + len(data) <= budget_bytes:
-            ext = os.path.splitext(src)[1] or ".img"
+            # Use only the URL path for the extension; a query string (e.g.
+            # "photo.jpg?w=800") would otherwise become part of the zip entry name.
+            ext = os.path.splitext(urlsplit(src).path)[1] or ".img"
             local_name = f"images/img_{index}{ext}"
             img["src"] = local_name
             embedded[local_name] = data
@@ -61,8 +65,9 @@ def _apply_image_policy(
 
 
 def _chapter_xhtml(title: str, body_html: str) -> str:
+    # Escape the title so an "&"/"<" in a newsletter title can't break the XHTML.
     return (
-        f"<html><head><title>{title}</title></head>"
+        f"<html><head><title>{_html.escape(title)}</title></head>"
         f"<body>{body_html}</body></html>"
     )
 

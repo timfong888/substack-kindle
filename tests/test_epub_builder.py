@@ -73,6 +73,26 @@ def test_image_inlined_when_under_budget():
         assert "<img" in xhtml
 
 
+def test_image_url_with_query_string_yields_clean_entry_name():
+    md = "CDN: ![pic](https://cdn.example.com/photo.jpg?w=800&fmt=webp)"
+    content = NewsletterContent(
+        title="T", markdown=md, images={"https://cdn.example.com/photo.jpg?w=800&fmt=webp": _PNG}
+    )
+    data = build_epub(content)
+    with zipfile.ZipFile(BytesIO(data)) as zf:
+        names = zf.namelist()
+        # Extension comes from the URL path only — no "?" in the zip entry name.
+        png_names = [n for n in names if n.endswith(".jpg")]
+        assert png_names, names
+        assert all("?" not in n for n in names)
+
+
+def test_title_with_special_chars_produces_valid_epub():
+    data = build_epub(NewsletterContent(title="Q&A: Tech & <Business>", markdown="body"))
+    book = _read_epub(data)  # round-trips through the reader = well-formed XML
+    assert book.get_metadata("DC", "title")[0][0] == "Q&A: Tech & <Business>"
+
+
 def test_image_stripped_when_over_budget():
     md = "Big: ![pic](cid:big.png)"
     content = NewsletterContent(title="T", markdown=md, images={"cid:big.png": _PNG})
@@ -99,5 +119,5 @@ def test_image_without_bytes_is_stripped():
 def test_no_llm_in_build_path():
     with open(__import__("substack_kindle.epub_builder", fromlist=["x"]).__file__) as fh:
         source = fh.read().lower()
-    for forbidden in ("anthropic", "openai", "claude"):
+    for forbidden in ("anthropic", "openai", "claude", "litellm"):
         assert forbidden not in source
