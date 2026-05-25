@@ -126,3 +126,15 @@ def test_add_approved_source_is_idempotent():
     store.add_approved_source("alice", "news@substack.com")
     store.add_approved_source("alice", "news@substack.com")
     assert store.get("alice").approved_sources == ["news@substack.com"]
+
+
+def test_reput_preserves_accumulated_approved_sources():
+    # Rotating a non-list field (e.g. kindle_email) via put() must not silently
+    # drop approved senders already registered through add_approved_source().
+    store = InMemoryConfigStore()
+    store.put(make_config(customer_id="alice"))
+    store.add_approved_source("alice", "news@substack.com")
+    store.put(make_config(customer_id="alice", kindle_email="rotated@kindle.com"))
+    cfg = store.get("alice")
+    assert cfg.kindle_email == "rotated@kindle.com"
+    assert "news@substack.com" in cfg.approved_sources

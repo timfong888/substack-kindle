@@ -11,7 +11,7 @@ runtime.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 WHITELISTING_STATUSES = ("confirmed", "unconfirmed")
 
@@ -79,6 +79,22 @@ class InMemoryConfigStore:
         self._rows: dict[str, CustomerConfig] = {}
 
     def put(self, config: CustomerConfig) -> None:
+        """Store a customer's config.
+
+        Re-putting an existing customer (e.g. to rotate ``kindle_email``)
+        preserves any ``approved_sources`` already accumulated for that customer
+        via :meth:`add_approved_source`: the incoming sources are unioned with
+        the stored ones (order-preserving). Approved senders only ever grow
+        (there is no remove path), so a routine config update never silently
+        drops the approved-sender list.
+        """
+        existing = self._rows.get(config.customer_id)
+        if existing is not None and existing.approved_sources:
+            merged = list(config.approved_sources)
+            for sender in existing.approved_sources:
+                if sender not in merged:
+                    merged.append(sender)
+            config = replace(config, approved_sources=merged)
         self._rows[config.customer_id] = config
 
     def get(self, customer_id: str) -> CustomerConfig | None:
