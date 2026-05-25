@@ -23,8 +23,12 @@ def html_to_markdown(html: str) -> str:
     if not html or not html.strip():
         return ""
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(list(_NOISE_TAGS)):
-        tag.decompose()
+    # Remove one tag type at a time, re-querying each time: decomposing a parent
+    # (e.g. <head>) also removes its noise children (<meta>/<link>), so collecting
+    # everything up front and then decomposing could touch already-removed nodes.
+    for tag_name in _NOISE_TAGS:
+        for tag in soup.find_all(tag_name):
+            tag.decompose()
     markdown = _markdownify(str(soup), heading_style="ATX")
     return markdown.strip()
 

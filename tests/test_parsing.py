@@ -47,6 +47,20 @@ def test_empty_html_yields_empty_markdown():
     assert html_to_markdown("").strip() == ""
 
 
+def test_noise_tags_nested_in_head_do_not_crash():
+    # Real HTML emails wrap <meta>/<link> inside <head>; removing the parent and
+    # the children must not touch an already-removed node.
+    html = (
+        "<html><head><meta charset='utf-8'>"
+        "<link rel='stylesheet' href='x.css'/></head>"
+        "<body><p>content</p></body></html>"
+    )
+    md = html_to_markdown(html)
+    assert "content" in md
+    assert "stylesheet" not in md
+    assert "charset" not in md
+
+
 def test_no_llm_or_network_import_in_parse_path():
     # Req 8: deterministic libraries only. No model/agent/network clients in this module.
     with open(parsing.__file__) as fh:
