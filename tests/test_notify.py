@@ -7,7 +7,7 @@ Acceptance:
 
 from dataclasses import dataclass
 
-from substack_kindle.notify import send_delivery_notification
+from substack_kindle.notify import DEFAULT_BODY, DEFAULT_SUBJECT, send_delivery_notification
 
 
 @dataclass
@@ -32,8 +32,8 @@ def test_notifies_on_successful_delivery():
     assert sent is True
     assert len(spy.calls) == 1
     assert spy.calls[0]["to"] == "reader@example.com"
-    assert spy.calls[0]["subject"]
-    assert spy.calls[0]["body"]
+    assert spy.calls[0]["subject"] == DEFAULT_SUBJECT
+    assert spy.calls[0]["body"] == DEFAULT_BODY
 
 
 def test_no_notification_for_empty_job():

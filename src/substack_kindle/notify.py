@@ -28,7 +28,13 @@ def send_delivery_notification(
     subject: str = DEFAULT_SUBJECT,
     body: str = DEFAULT_BODY,
 ) -> bool:
-    """Notify the customer iff the job actually delivered. Returns whether one was sent."""
+    """Notify the customer iff the job actually delivered.
+
+    Returns ``True`` when a notification was sent. The injected ``send_email`` is
+    expected to raise on failure (the project's send convention), so a returned
+    ``True`` means the send completed without error; ``False`` means no
+    notification was warranted (a failed or empty job).
+    """
     if result.status != "succeeded" or result.outcome != "delivered":
         return False
     send_email(to=to, subject=subject, body=body)
