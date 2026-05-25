@@ -17,11 +17,15 @@ EPUB = b"PK\x03\x04 epub bytes"
 
 
 class FakeResponse:
-    def __init__(self, status_code, payload):
+    def __init__(self, status_code, payload=None, *, text="", json_raises=False):
         self.status_code = status_code
         self._payload = payload
+        self.text = text
+        self._json_raises = json_raises
 
     def json(self):
+        if self._json_raises:
+            raise ValueError("not JSON")
         return self._payload
 
 
@@ -74,6 +78,21 @@ def test_attachment_is_base64_epub_with_correct_content_type():
     assert attachment["Name"] == "job.epub"
     assert attachment["ContentType"] == "application/epub+zip"
     assert base64.b64decode(attachment["Content"]) == EPUB
+
+
+def test_payload_includes_text_body_required_by_postmark():
+    http = FakeHttp(FakeResponse(200, {"MessageID": "abc", "ErrorCode": 0}))
+    _send(http)
+    _url, payload, _headers = http.calls[0]
+    # Postmark rejects a message with neither TextBody nor HtmlBody.
+    assert payload.get("TextBody") or payload.get("HtmlBody")
+
+
+def test_non_json_5xx_body_raises_postmark_error_not_decode_error():
+    http = FakeHttp(FakeResponse(503, json_raises=True, text="<html>gateway down</html>"))
+    with pytest.raises(PostmarkError) as exc:
+        _send(http)
+    assert "503" in str(exc.value)
 
 
 def test_uses_configured_message_stream():

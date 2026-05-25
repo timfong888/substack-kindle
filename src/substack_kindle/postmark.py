@@ -18,6 +18,7 @@ from dataclasses import dataclass
 POSTMARK_EMAIL_URL = "https://api.postmarkapp.com/email"
 EPUB_CONTENT_TYPE = "application/epub+zip"
 DEFAULT_SUBJECT = "Your newsletters"
+DEFAULT_TEXT_BODY = "Your newsletters are attached as an EPUB."
 
 
 class PostmarkError(Exception):
@@ -39,6 +40,7 @@ def send_epub(
     server_token: str,
     http_post: Callable[..., object],
     subject: str = DEFAULT_SUBJECT,
+    text_body: str = DEFAULT_TEXT_BODY,
     message_stream: str = "outbound",
 ) -> SendResult:
     """Email ``epub_bytes`` to ``to`` from the whitelist sender ``from_`` via Postmark."""
@@ -46,6 +48,8 @@ def send_epub(
         "From": from_,
         "To": to,
         "Subject": subject,
+        # Postmark requires a TextBody or HtmlBody; Send-to-Kindle only uses the attachment.
+        "TextBody": text_body,
         "MessageStream": message_stream,
         "Attachments": [
             {
@@ -62,12 +66,20 @@ def send_epub(
     }
 
     response = http_post(POSTMARK_EMAIL_URL, json=payload, headers=headers)
-    body = response.json()
+    # Check the HTTP status before parsing JSON: a 5xx gateway may return a
+    # non-JSON (HTML) body, which must still surface as a PostmarkError.
     if not (200 <= response.status_code < 300):
-        raise PostmarkError(
-            f"Postmark returned HTTP {response.status_code}: {body.get('Message', body)}"
-        )
+        raise PostmarkError(f"Postmark returned HTTP {response.status_code}: {_message(response)}")
+    body = response.json()
     # Postmark can return 200 with a non-zero ErrorCode — still a failure.
     if body.get("ErrorCode", 0) != 0:
         raise PostmarkError(f"Postmark error {body['ErrorCode']}: {body.get('Message', '')}")
     return SendResult(message_id=body.get("MessageID", ""), to=to)
+
+
+def _message(response: object) -> str:
+    """Best-effort human-readable message from a (possibly non-JSON) error response."""
+    try:
+        return response.json().get("Message", "") or getattr(response, "text", "")
+    except Exception:
+        return getattr(response, "text", "") or "unknown error"
