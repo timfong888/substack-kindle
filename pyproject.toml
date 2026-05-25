@@ -6,9 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    # Deterministic HTML->Markdown body conversion (SAT-244). No LLM in this path.
+    # Deterministic body conversion + EPUB assembly. No LLM in these paths.
     "beautifulsoup4>=4.12",
     "markdownify>=0.13",
+    "markdown>=3.5",
+    "ebooklib>=0.18",
 ]
 
 [project.optional-dependencies]
