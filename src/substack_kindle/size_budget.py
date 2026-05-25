@@ -55,6 +55,11 @@ def plan_send(
     filename: str = "job.epub",
 ) -> SendPlan:
     """Return a SendPlan whose every part fits under ``max_message_bytes`` post-base64."""
+    # A cap below one base64 block can't hold any data and would make the split
+    # chunk size zero (range() step of 0 raises); fail fast with a clear error.
+    if max_message_bytes < 4:
+        raise ValueError("max_message_bytes must be at least 4 (one base64 block)")
+
     # 1. Fits as-is.
     if base64_encoded_size(len(payload)) <= max_message_bytes:
         return SendPlan([payload], [filename], EPUB_CONTENT_TYPE, compressed=False)

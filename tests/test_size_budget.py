@@ -10,6 +10,8 @@ import os
 import zipfile
 from io import BytesIO
 
+import pytest
+
 from substack_kindle.size_budget import (
     POSTMARK_MAX_MESSAGE_BYTES,
     base64_encoded_size,
@@ -81,3 +83,10 @@ def test_part_filenames_are_numbered_when_split():
     plan = plan_send(payload, max_message_bytes=400, filename="job.epub")
     assert len(plan.filenames) == plan.total_parts
     assert len(set(plan.filenames)) == plan.total_parts  # unique names per part
+
+
+def test_cap_below_one_base64_block_raises():
+    # A cap < 4 can't hold a base64 block; it must fail fast, not blow up with a
+    # range() step-of-zero ValueError deep in the split path.
+    with pytest.raises(ValueError, match="at least 4"):
+        plan_send(b"anything", max_message_bytes=2)
