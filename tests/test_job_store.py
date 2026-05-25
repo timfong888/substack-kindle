@@ -70,6 +70,30 @@ def test_store_add_and_get():
     assert store.get("missing") is None
 
 
+def test_add_rejects_duplicate_job_id():
+    store = InMemoryJobStore()
+    store.add(make_job(job_id="dup"))
+    with pytest.raises(ValueError, match="already exists"):
+        store.add(make_job(job_id="dup", status=JobStatus.SUCCEEDED))
+    # The original audit entry is preserved, not overwritten.
+    assert store.get("dup").status is JobStatus.PENDING
+
+
+def test_naive_datetimes_rejected_at_construction():
+    naive = datetime(2026, 5, 1, 0, 0)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        make_job(start_date=naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        make_job(end_date=naive)
+
+
+def test_running_job_excluded_from_last_successful():
+    store = InMemoryJobStore()
+    store.add(make_job(job_id="running", end_date=_dt(5), status=JobStatus.RUNNING))
+    store.add(make_job(job_id="ok", end_date=_dt(3), status=JobStatus.SUCCEEDED))
+    assert store.last_successful("cust-1").job_id == "ok"
+
+
 def test_for_customer_isolated_and_ordered_by_end_date():
     store = InMemoryJobStore()
     store.add(make_job(job_id="a", customer_id="alice", start_date=_dt(1), end_date=_dt(2)))
@@ -109,6 +133,15 @@ def test_derive_next_window_without_prior_success_raises():
     store = InMemoryJobStore()
     with pytest.raises(LookupError):
         store.derive_next_window("cust-1", _dt(7))
+
+
+def test_derive_next_window_inverted_raises():
+    store = InMemoryJobStore()
+    store.add(make_job(job_id="ok", end_date=_dt(5), status=JobStatus.SUCCEEDED))
+    with pytest.raises(ValueError, match="must be after"):
+        store.derive_next_window("cust-1", _dt(4))
+    with pytest.raises(ValueError, match="must be after"):
+        store.derive_next_window("cust-1", _dt(5))  # equal is not "after"
 
 
 def test_window_is_contiguous_across_runs():
