@@ -10,6 +10,7 @@ stays decoupled from the concrete Gmail/EPUB/Postmark/store modules.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -56,8 +57,8 @@ def run_job(
             record(result)
         return result
 
-    delivered_ids = [id_of(n) for n in deduped]
     try:
+        delivered_ids = [id_of(n) for n in deduped]
         epub_bytes = build_epub(deduped)
         send(epub_bytes)
     except Exception as exc:
@@ -65,7 +66,9 @@ def run_job(
             trigger, start_date, end_date, "failed", "error", [], error=str(exc)
         )
         if record is not None:
-            record(result)
+            # Don't let a recording failure mask the original pipeline exception.
+            with contextlib.suppress(Exception):
+                record(result)
         raise
 
     result = JobRunResult(trigger, start_date, end_date, "succeeded", "delivered", delivered_ids)
