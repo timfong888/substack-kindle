@@ -1,0 +1,5 @@
+{
+  "$schema": "https://docs.greptile.com/schema/greptile.json",
+  "comment": "Greptile PR review config. Non-secret — safe to commit (API key lives in Claude Code config / GitHub App, never here).",
+  "instructions": "Enforce the project's security policy (public repo — no secrets). Flag any hardcoded credentials, tokens, or per-customer config. Verify read-only Gmail scope is never violated (no mutating Gmail calls). Confirm new pipeline code keeps body parsing free of LLM calls (Req 8). Require tests for new behavior (TDD)."
+}
