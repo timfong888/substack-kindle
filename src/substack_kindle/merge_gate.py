@@ -24,6 +24,10 @@ class GateStatus:
     greptile_complete: bool
     approvals: int
 
+    def __post_init__(self) -> None:
+        if self.approvals < 0:
+            raise ValueError(f"approvals must be >= 0, got {self.approvals}")
+
 
 def gate_blockers(status: GateStatus, *, required_approvals: int = 1) -> list[str]:
     """Return the unmet gate conditions (empty list means the gate is satisfied)."""

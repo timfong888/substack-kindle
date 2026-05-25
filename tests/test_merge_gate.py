@@ -6,6 +6,8 @@ Acceptance:
   flagged (never force-pushed).
 """
 
+import pytest
+
 import substack_kindle.merge_gate as merge_gate_mod
 from substack_kindle.merge_gate import (
     Decision,
@@ -68,10 +70,17 @@ def test_incomplete_story_is_flagged_not_force_pushed():
 
 
 def test_module_has_no_force_push_capability():
-    with open(merge_gate_mod.__file__, encoding="utf-8") as fh:
-        source = fh.read().lower()
+    import inspect
+
+    # inspect.getsource returns the .py text even in bytecode-only installs.
+    source = inspect.getsource(merge_gate_mod).lower()
     # No git/push side effects: the gate is a pure decision function, never an actor.
     assert "subprocess" not in source
     assert "git push" not in source
     assert "force_push" not in source
     assert "--force" not in source
+
+
+def test_negative_approvals_rejected():
+    with pytest.raises(ValueError, match="approvals must be"):
+        GateStatus(ci_passed=True, greptile_complete=True, approvals=-1)
