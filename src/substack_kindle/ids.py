@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 __all__ = ["NewsletterRef", "newsletter_id", "IdRegistry"]
 
@@ -18,10 +19,35 @@ __all__ = ["NewsletterRef", "newsletter_id", "IdRegistry"]
 _SEP = "\x00"
 
 
+def _coerce_datetime(value: str | datetime) -> datetime | None:
+    """Parse a date value into a datetime, or None if the format is unrecognized."""
+    if isinstance(value, datetime):
+        return value
+    text = value.strip()
+    try:
+        return datetime.fromisoformat(text)  # handles the "Z" suffix on 3.11+
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(text)  # RFC 2822 (typical email Date: header)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_date(date_sent: str | datetime) -> str:
-    if isinstance(date_sent, datetime):
-        return date_sent.isoformat()
-    return str(date_sent).strip()
+    """Canonicalize a date so equivalent instants collapse to one string.
+
+    All recognized forms (ISO 8601 incl. ``Z``, RFC 2822) parse to a datetime;
+    timezone-aware values are normalized to UTC so the same instant expressed in
+    different notations or offsets yields one ID. Unparseable values fall back to
+    a stripped string so the function never raises in the ID path.
+    """
+    dt = _coerce_datetime(date_sent)
+    if dt is None:
+        return str(date_sent).strip()
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC)
+    return dt.isoformat()
 
 
 def _canonical(sender: str, date_sent: str | datetime, subject: str) -> tuple[str, str, str]:

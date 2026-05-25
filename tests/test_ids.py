@@ -52,6 +52,29 @@ def test_datetime_and_isostring_dates_are_equivalent():
     assert as_str == as_dt
 
 
+@pytest.mark.parametrize(
+    "equivalent_date",
+    [
+        "2026-05-20T09:00:00Z",  # "Z" UTC suffix
+        "2026-05-20T04:00:00-05:00",  # same instant, different offset
+        "20 May 2026 09:00:00 +0000",  # RFC 2822 (email Date: header form)
+        datetime.fromisoformat(DATE),  # aware datetime object
+    ],
+)
+def test_equivalent_instants_collapse_to_one_id(equivalent_date):
+    # Req 6 dedup guarantee: the same instant in any recognized notation -> one ID.
+    assert newsletter_id(SENDER, equivalent_date, SUBJECT) == newsletter_id(
+        SENDER, DATE, SUBJECT
+    )
+
+
+def test_unparseable_date_is_stable_and_does_not_raise():
+    a = newsletter_id(SENDER, "not-a-date", SUBJECT)
+    b = newsletter_id(SENDER, "not-a-date", SUBJECT)
+    assert a == b
+    assert a != newsletter_id(SENDER, DATE, SUBJECT)
+
+
 def test_registry_resolves_id_back_to_source():
     reg = IdRegistry()
     nid = reg.register(SENDER, DATE, SUBJECT)
