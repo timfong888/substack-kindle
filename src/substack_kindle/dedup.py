@@ -27,8 +27,12 @@ def deduplicate(
     result: list[T] = []
     for item in items:
         newsletter_id = key(item)
-        if newsletter_id in seen or is_delivered(newsletter_id):
+        if newsletter_id in seen:
             continue
+        # Record the ID before the delivered-check so a repeated ID never triggers
+        # a second is_delivered lookup (the backing store call may be I/O).
         seen.add(newsletter_id)
+        if is_delivered(newsletter_id):
+            continue
         result.append(item)
     return result

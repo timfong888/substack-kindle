@@ -57,13 +57,26 @@ def test_empty_input():
     assert deduplicate([], FakeDeliveredStore(set()).is_delivered) == []
 
 
-def test_dedup_is_identical_regardless_of_trigger():
-    # Same store + same candidates must yield the same result for scheduled and backfill.
-    store = FakeDeliveredStore({"b"})
-    candidates = [_Item("a"), _Item("b"), _Item("c")]
-    scheduled = deduplicate(list(candidates), store.is_delivered)
-    backfill = deduplicate(list(candidates), store.is_delivered)
-    assert [i.newsletter_id for i in scheduled] == [i.newsletter_id for i in backfill] == ["a", "c"]
+def test_dedup_has_no_trigger_parameter():
+    # Trigger-independence is structural: dedup must not branch on trigger at all,
+    # so its signature never gains a trigger parameter.
+    import inspect
+
+    assert "trigger" not in inspect.signature(deduplicate).parameters
+
+
+def test_repeated_delivered_id_checked_only_once():
+    calls = []
+
+    def counting_is_delivered(nid):
+        calls.append(nid)
+        return nid == "b"
+
+    items = [_Item("b"), _Item("b"), _Item("a"), _Item("a")]
+    kept = deduplicate(items, counting_is_delivered)
+    assert [i.newsletter_id for i in kept] == ["a"]
+    # Each unique ID is checked at most once, even when it repeats in the batch.
+    assert sorted(calls) == ["a", "b"]
 
 
 def test_custom_key_supports_plain_id_strings():
