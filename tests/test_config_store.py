@@ -25,7 +25,7 @@ def make_config(customer_id="cust-1", **overrides):
         recipient_email=f"{customer_id}@gmail.com",
         kindle_email=f"{customer_id}@kindle.com",
         newsletter_label="Newsletters",
-        gmail_oauth_token_ref="secretref://gmail/cust-1",
+        gmail_oauth_token_ref=f"secretref://gmail/{customer_id}",
     )
     base.update(overrides)
     return CustomerConfig(**base)
@@ -58,6 +58,12 @@ def test_whitelisting_status_must_be_valid():
     with pytest.raises(ValueError):
         make_config(whitelisting_status="maybe")
     assert make_config(whitelisting_status="confirmed").whitelisting_status == "confirmed"
+
+
+def test_status_cannot_be_reassigned_to_invalid_value_after_construction():
+    cfg = make_config()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.whitelisting_status = "maybe"
 
 
 def test_whitelist_email_is_not_per_customer():
@@ -106,6 +112,12 @@ def test_approved_sources_are_isolated_per_customer():
     store.add_approved_source("alice", "news@substack.com")
     assert store.get("alice").approved_sources == ["news@substack.com"]
     assert store.get("bob").approved_sources == []
+
+
+def test_add_approved_source_unknown_customer_raises_clear_error():
+    store = InMemoryConfigStore()
+    with pytest.raises(KeyError, match="no config stored for customer"):
+        store.add_approved_source("ghost", "news@substack.com")
 
 
 def test_add_approved_source_is_idempotent():

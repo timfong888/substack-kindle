@@ -16,12 +16,20 @@ from dataclasses import dataclass, field
 WHITELISTING_STATUSES = ("confirmed", "unconfirmed")
 
 
-@dataclass
+@dataclass(frozen=True)
 class CustomerConfig:
     """One config row for a single customer.
 
     ``gmail_oauth_token_ref`` is a reference (e.g. ``secretref://...``) to the
     token in a secrets manager, never the raw token itself.
+
+    Frozen so ``whitelisting_status`` cannot be reassigned to an invalid value
+    after construction (which would bypass the ``__post_init__`` guard);
+    ``approved_sources`` is still list-mutated in place by the store.
+
+    Logging safety: ``__repr__`` redacts the token reference, but
+    ``dataclasses.asdict()`` / ``vars()`` return it unredacted — do not feed this
+    object to those helpers on a logging or serialization path.
     """
 
     customer_id: str
@@ -77,7 +85,9 @@ class InMemoryConfigStore:
         return self._rows.get(customer_id)
 
     def add_approved_source(self, customer_id: str, sender: str) -> None:
-        config = self._rows[customer_id]
+        config = self._rows.get(customer_id)
+        if config is None:
+            raise KeyError(f"no config stored for customer {customer_id!r}")
         if sender not in config.approved_sources:
             config.approved_sources.append(sender)
 
