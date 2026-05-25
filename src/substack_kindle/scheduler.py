@@ -31,6 +31,12 @@ def initiate_scheduled_job(
     """
     if last_successful_end is None:
         raise LookupError("no last successful job to derive the scheduled window from")
+    if (now.tzinfo is None) != (last_successful_end.tzinfo is None):
+        # Avoid a bare TypeError from comparing offset-naive vs offset-aware datetimes.
+        raise TypeError(
+            "now and last_successful_end must both be timezone-aware or both naive; "
+            f"got now={now!r}, last_successful_end={last_successful_end!r}"
+        )
     if now <= last_successful_end:
         raise ValueError(
             f"now ({now.isoformat()}) must be after the last successful end "

@@ -68,6 +68,14 @@ def test_now_must_advance_past_last_success():
     assert run.calls == []
 
 
+def test_mismatched_timezone_awareness_raises_typeerror():
+    run = RunSpy()
+    naive_now = datetime(2026, 5, 10)  # no tzinfo, while last_successful_end is aware
+    with pytest.raises(TypeError, match="timezone-aware"):
+        initiate_scheduled_job(now=naive_now, last_successful_end=_dt(4), run=run)
+    assert run.calls == []
+
+
 def test_runs_exactly_once_per_invocation():
     # Per-run, short session: one pass through the pipeline, no held-open loop.
     run = RunSpy()
