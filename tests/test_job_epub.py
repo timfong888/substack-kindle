@@ -7,10 +7,10 @@ Acceptance:
 """
 
 import zipfile
+from html.parser import HTMLParser
 from io import BytesIO
 
 import pytest
-from bs4 import BeautifulSoup
 
 from substack_kindle.job_epub import JobSection, build_job_epub
 
@@ -19,13 +19,38 @@ def _zip(data: bytes) -> zipfile.ZipFile:
     return zipfile.ZipFile(BytesIO(data))
 
 
+class _AnchorCollector(HTMLParser):
+    """Collect (text, href) for every <a> in the nav (stdlib only — no extra deps)."""
+
+    def __init__(self):
+        super().__init__()
+        self.links: list[tuple[str, str]] = []
+        self._href: str | None = None
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._href = dict(attrs).get("href")
+            self._text = []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href is not None:
+            self.links.append(("".join(self._text).strip(), self._href))
+            self._href = None
+
+
 def _nav_links(data: bytes):
     """Return (text, href) pairs from the EPUB3 toc nav."""
     with _zip(data) as zf:
         nav_name = next(n for n in zf.namelist() if n.endswith("nav.xhtml"))
-        soup = BeautifulSoup(zf.read(nav_name), "html.parser")
-    toc = soup.find("nav", attrs={"epub:type": "toc"}) or soup.find("nav")
-    return [(a.get_text(strip=True), a.get("href")) for a in toc.find_all("a")]
+        nav_html = zf.read(nav_name).decode("utf-8")
+    collector = _AnchorCollector()
+    collector.feed(nav_html)
+    return collector.links
 
 
 def _sections(n):
