@@ -1,0 +1,85 @@
+"""Per-customer config store (SAT-237 / Req §Configuration).
+
+Multi-tenant from day one: one ``CustomerConfig`` per customer, keyed by
+``customer_id`` so two customers never collide. The Gmail OAuth token is held as
+an opaque *reference* (resolved at runtime from a secrets manager) — never the
+raw token — and is redacted from ``repr``. ``whitelist_email`` is a single shared
+system value, not stored per customer; it is read from the environment at
+runtime.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+
+WHITELISTING_STATUSES = ("confirmed", "unconfirmed")
+
+
+@dataclass
+class CustomerConfig:
+    """One config row for a single customer.
+
+    ``gmail_oauth_token_ref`` is a reference (e.g. ``secretref://...``) to the
+    token in a secrets manager, never the raw token itself.
+    """
+
+    customer_id: str
+    recipient_email: str
+    kindle_email: str
+    newsletter_label: str
+    gmail_oauth_token_ref: str
+    approved_sources: list[str] = field(default_factory=list)
+    whitelisting_status: str = "unconfirmed"
+
+    def __post_init__(self) -> None:
+        if self.whitelisting_status not in WHITELISTING_STATUSES:
+            raise ValueError(
+                f"whitelisting_status must be one of {WHITELISTING_STATUSES}, "
+                f"got {self.whitelisting_status!r}"
+            )
+
+    def __repr__(self) -> str:
+        # Redact the token reference so it never lands in logs/tracebacks.
+        return (
+            f"CustomerConfig(customer_id={self.customer_id!r}, "
+            f"recipient_email={self.recipient_email!r}, "
+            f"kindle_email={self.kindle_email!r}, "
+            f"newsletter_label={self.newsletter_label!r}, "
+            f"gmail_oauth_token_ref='***redacted***', "
+            f"approved_sources={self.approved_sources!r}, "
+            f"whitelisting_status={self.whitelisting_status!r})"
+        )
+
+
+def shared_whitelist_email() -> str:
+    """Return the single shared sending/whitelist identity from the environment.
+
+    This is intentionally NOT stored per customer; it is one system value
+    supplied at runtime (never committed).
+    """
+    value = os.environ.get("WHITELIST_EMAIL")
+    if not value:
+        raise RuntimeError("WHITELIST_EMAIL is not configured in the environment")
+    return value
+
+
+class InMemoryConfigStore:
+    """Customer-keyed config store. Reads/writes never collide across customers."""
+
+    def __init__(self) -> None:
+        self._rows: dict[str, CustomerConfig] = {}
+
+    def put(self, config: CustomerConfig) -> None:
+        self._rows[config.customer_id] = config
+
+    def get(self, customer_id: str) -> CustomerConfig | None:
+        return self._rows.get(customer_id)
+
+    def add_approved_source(self, customer_id: str, sender: str) -> None:
+        config = self._rows[customer_id]
+        if sender not in config.approved_sources:
+            config.approved_sources.append(sender)
+
+    def __len__(self) -> int:
+        return len(self._rows)
