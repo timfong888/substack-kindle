@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    # Added per-story as the pipeline is built (parsing, EPUB, Postmark, Gmail).
+    # Deterministic HTML->Markdown body conversion (SAT-244). No LLM in this path.
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.13",
 ]
 
 [project.optional-dependencies]
