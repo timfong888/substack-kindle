@@ -11,6 +11,7 @@ import pytest
 
 from substack_kindle.onboarding_verification import (
     KNOWN_TEST_DOCUMENT,
+    TEST_FILENAME,
     DeliveryGate,
     confirm_test_delivery,
     enable_scheduled_runs,
@@ -51,6 +52,9 @@ def test_send_test_document_sends_known_epub():
     assert spy.calls[0]["epub_bytes"] == KNOWN_TEST_DOCUMENT
     assert spy.calls[0]["to"] == "reader@kindle.com"
     assert spy.calls[0]["from_"] == "whitelist@system.example"
+    # The .epub filename matters: the Send-to-Kindle gateway routes by extension.
+    assert spy.calls[0]["filename"] == TEST_FILENAME
+    assert spy.calls[0]["filename"].endswith(".epub")
 
 
 def test_send_failure_propagates_and_does_not_mark_sent():
