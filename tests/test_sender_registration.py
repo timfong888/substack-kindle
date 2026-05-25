@@ -131,3 +131,16 @@ def test_message_missing_from_header_is_skipped():
     msg = EmailMessage("1", {}, [LABEL])
     gmail = FakeReadOnlyGmail([msg])
     assert register_senders_from_label(gmail, LABEL) == []
+
+
+def test_bare_display_name_without_address_is_ignored():
+    # parseaddr("Newsletter") -> ('', 'Newsletter'); not a real address.
+    assert sender_of(_msg("1", "Newsletter")) is None
+    gmail = FakeReadOnlyGmail([_msg("1", "Newsletter")])
+    assert register_senders_from_label(gmail, LABEL) == []
+
+
+def test_preexisting_entries_are_normalized_lowercase():
+    gmail = FakeReadOnlyGmail([_msg("1", "Bob <bob@b.example>")])
+    result = register_senders_from_label(gmail, LABEL, approved_sources=["Alice@A.Example"])
+    assert result == ["alice@a.example", "bob@b.example"]

@@ -42,7 +42,11 @@ def sender_of(message: EmailMessage) -> str | None:
     if not raw:
         return None
     address = parseaddr(raw)[1]
-    return address.lower() or None
+    # parseaddr returns a bare display name in [1] when there's no real address;
+    # require an "@" so a non-email string never lands in approved_sources.
+    if not address or "@" not in address:
+        return None
+    return address.lower()
 
 
 def register_senders_from_label(
@@ -53,10 +57,10 @@ def register_senders_from_label(
     """Register the senders of all messages carrying ``label`` into approved_sources.
 
     Returns a new list (the caller's list is not mutated); order is preserved and
-    senders are de-duplicated case-insensitively.
+    all entries are normalized to lowercase and de-duplicated.
     """
-    approved = list(approved_sources or [])
-    seen = {s.lower() for s in approved}
+    approved = [s.lower() for s in (approved_sources or [])]
+    seen = set(approved)
     for message in client.messages_with_label(label):
         sender = sender_of(message)
         if sender and sender not in seen:
