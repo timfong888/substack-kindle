@@ -50,6 +50,15 @@ def test_timezone_naive_date_raises():
         collect_newsletters(messages, APPROVED, *WINDOW, id_fn=_fake_id)
 
 
+def test_timezone_naive_window_bound_raises():
+    # A naive window bound must fail loudly up front, not raise an opaque
+    # TypeError mid-comparison against aware message dates.
+    messages = [IncomingMessage("m1", "alice@a.example", _dt(3), "hi")]
+    naive_start = datetime(2026, 5, 1, 9, 0)  # no tzinfo
+    with pytest.raises(ValueError, match="timezone-aware"):
+        collect_newsletters(messages, APPROVED, naive_start, _dt(10), id_fn=_fake_id)
+
+
 def test_collects_only_approved_senders():
     messages = [
         IncomingMessage("m1", "alice@a.example", _dt(2), "Alice #1"),

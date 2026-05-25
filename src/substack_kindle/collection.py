@@ -67,6 +67,10 @@ def collect_newsletters(
     Senders are matched case-insensitively; the window is inclusive of both
     bounds; input order is preserved. All datetimes must be timezone-aware.
     """
+    if window_start.tzinfo is None or window_end.tzinfo is None:
+        # A naive bound vs aware message dates raises TypeError mid-compare; fail
+        # loudly up front with the same contract the message guard enforces.
+        raise ValueError("window_start and window_end must be timezone-aware")
     approved = {s.lower() for s in approved_sources}
     collected: list[CollectedNewsletter] = []
     for message in messages:
