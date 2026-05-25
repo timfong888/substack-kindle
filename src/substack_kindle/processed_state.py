@@ -57,7 +57,10 @@ class InMemoryProcessedStateStore:
             record = _Record(newsletter_id=newsletter_id, state=ProcessedState.DELIVERED)
             self._by_id[newsletter_id] = record
         record.state = ProcessedState.DELIVERED
-        if gmail_message_id is not None:
+        if gmail_message_id is not None and gmail_message_id != record.gmail_message_id:
+            # Drop a superseded message-id so it is not a stale "delivered" false positive.
+            if record.gmail_message_id is not None:
+                self._delivered_message_ids.discard(record.gmail_message_id)
             record.gmail_message_id = gmail_message_id
         if delivered_at is not None:
             record.delivered_at = delivered_at
@@ -69,7 +72,8 @@ class InMemoryProcessedStateStore:
         return record.state if record else None
 
     def is_parsed(self, newsletter_id: str) -> bool:
-        return newsletter_id in self._by_id
+        record = self._by_id.get(newsletter_id)
+        return record is not None and record.state is ProcessedState.PARSED
 
     def is_delivered(self, newsletter_id: str) -> bool:
         record = self._by_id.get(newsletter_id)

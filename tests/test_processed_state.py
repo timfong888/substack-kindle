@@ -42,6 +42,8 @@ def test_parsed_is_distinct_from_delivered():
 
     store.mark_delivered("nl-1")
     assert store.is_delivered("nl-1") is True
+    # Predicates report the exact state: once delivered it is no longer "parsed".
+    assert store.is_parsed("nl-1") is False
     assert store.state_of("nl-1") is ProcessedState.DELIVERED
 
 
@@ -65,6 +67,14 @@ def test_secondary_lookup_by_gmail_message_id():
     store.mark_delivered("nl-1", gmail_message_id="gmail-abc")
     assert store.is_message_delivered("gmail-abc") is True
     assert store.is_message_delivered("gmail-xyz") is False
+
+
+def test_superseded_gmail_message_id_is_not_a_stale_positive():
+    store = InMemoryProcessedStateStore()
+    store.mark_delivered("nl-1", gmail_message_id="gmail-old")
+    store.mark_delivered("nl-1", gmail_message_id="gmail-new")
+    assert store.is_message_delivered("gmail-new") is True
+    assert store.is_message_delivered("gmail-old") is False
 
 
 def test_delivered_ids_returns_only_delivered():
