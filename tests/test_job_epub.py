@@ -20,27 +20,45 @@ def _zip(data: bytes) -> zipfile.ZipFile:
 
 
 class _AnchorCollector(HTMLParser):
-    """Collect (text, href) for every <a> in the nav (stdlib only — no extra deps)."""
+    """Collect (text, href) for <a> tags inside the toc nav only (stdlib, no deps).
+
+    Scoped to ``<nav epub:type="toc">`` so a future landmarks nav from ebooklib
+    can't inflate the TOC-entry count.
+    """
 
     def __init__(self):
         super().__init__()
         self.links: list[tuple[str, str]] = []
+        self._in_toc = False
+        self._nav_depth = 0
         self._href: str | None = None
         self._text: list[str] = []
 
     def handle_starttag(self, tag, attrs):
-        if tag == "a":
-            self._href = dict(attrs).get("href")
+        ad = dict(attrs)
+        if tag == "nav":
+            if not self._in_toc and ad.get("epub:type") == "toc":
+                self._in_toc = True
+                self._nav_depth = 1
+            elif self._in_toc:
+                self._nav_depth += 1
+            return
+        if self._in_toc and tag == "a":
+            self._href = ad.get("href")
             self._text = []
 
     def handle_data(self, data):
-        if self._href is not None:
+        if self._in_toc and self._href is not None:
             self._text.append(data)
 
     def handle_endtag(self, tag):
-        if tag == "a" and self._href is not None:
+        if self._in_toc and tag == "a" and self._href is not None:
             self.links.append(("".join(self._text).strip(), self._href))
             self._href = None
+        elif self._in_toc and tag == "nav":
+            self._nav_depth -= 1
+            if self._nav_depth == 0:
+                self._in_toc = False
 
 
 def _nav_links(data: bytes):
@@ -116,3 +134,13 @@ def test_ncx_present_for_kindle_compatibility():
 def test_empty_job_raises():
     with pytest.raises(ValueError):
         build_job_epub([], book_title="Empty")
+
+
+def test_special_characters_in_titles_produce_valid_epub():
+    sections = [JobSection(title="Growth & Strategy <Weekly>", markdown="# Hi\n\nbody")]
+    data = build_job_epub(sections, book_title="Sophia's Weekly & More")
+    # Round-trips through a reader = well-formed XML; nav reflects the escaped title.
+    links = _nav_links(data)
+    assert links[0][0] == "Growth & Strategy <Weekly>"
+    with _zip(data) as zf:
+        assert any(n.endswith(".opf") for n in zf.namelist())

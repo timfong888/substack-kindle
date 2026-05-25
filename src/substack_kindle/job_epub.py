@@ -8,9 +8,11 @@ XHTML, ebooklib); no LLM/network in this path.
 
 from __future__ import annotations
 
+import html as _html
 import os
 import tempfile
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import markdown as _markdown
 from ebooklib import epub
@@ -25,7 +27,13 @@ class JobSection:
 
 
 def _chapter_xhtml(title: str, body_html: str) -> str:
-    return f"<html><head><title>{title}</title></head><body>{body_html}</body></html>"
+    # Escape the title and declare the XHTML namespace so a title containing
+    # &, <, or > can't produce a malformed content document.
+    return (
+        f'<html xmlns="http://www.w3.org/1999/xhtml">'
+        f"<head><title>{_html.escape(title)}</title></head>"
+        f"<body>{body_html}</body></html>"
+    )
 
 
 def _to_bytes(book: epub.EpubBook) -> bytes:
@@ -44,7 +52,7 @@ def build_job_epub(
         raise ValueError("a job EPUB needs at least one newsletter section")
 
     book = epub.EpubBook()
-    book.set_identifier(identifier or f"urn:job:{book_title}")
+    book.set_identifier(identifier or f"urn:job:{quote(book_title, safe='')}")
     book.set_title(book_title)
     book.set_language("en")
 
