@@ -171,6 +171,24 @@ def test_record_failure_does_not_mask_original_pipeline_error():
         )
 
 
+def test_record_failure_on_success_path_does_not_raise_after_delivery():
+    # The send already succeeded; a recorder crash must not surface as a pipeline
+    # error, or a caller's retry logic could re-trigger a duplicate delivery.
+    h = Harness([_NL("a")])
+
+    def bad_record(_result):
+        raise RuntimeError("recorder exploded")
+
+    result = run_job(
+        start_date=_dt(1), end_date=_dt(5), trigger=ON_DEMAND,
+        collect=h.collect, dedup=h.dedup, build_epub=h.build_epub, send=h.send,
+        record=bad_record,
+    )
+    assert result.status == "succeeded"
+    assert result.outcome == "delivered"
+    assert h.sent == [b"EPUB-BYTES"]
+
+
 def test_record_is_optional():
     h = Harness([_NL("a")])
     result = run_job(

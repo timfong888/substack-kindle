@@ -20,6 +20,18 @@ SCHEDULED = "scheduled"
 ON_DEMAND = "on-demand"
 
 
+def _record_safely(record: Callable[[JobRunResult], Any] | None, result: JobRunResult) -> None:
+    """Record a result without ever masking the run's own outcome.
+
+    A recorder failure must not turn a completed send into a raised exception
+    (a caller could misread that as a reason to retry and re-deliver), nor
+    mask an original pipeline error in the failure path.
+    """
+    if record is not None:
+        with contextlib.suppress(Exception):
+            record(result)
+
+
 @dataclass
 class JobRunResult:
     trigger: str
@@ -53,8 +65,7 @@ def run_job(
 
     if not deduped:
         result = JobRunResult(trigger, start_date, end_date, "succeeded", "empty", [])
-        if record is not None:
-            record(result)
+        _record_safely(record, result)
         return result
 
     try:
@@ -65,15 +76,11 @@ def run_job(
         result = JobRunResult(
             trigger, start_date, end_date, "failed", "error", [], error=str(exc)
         )
-        if record is not None:
-            # Don't let a recording failure mask the original pipeline exception.
-            with contextlib.suppress(Exception):
-                record(result)
+        _record_safely(record, result)
         raise
 
     result = JobRunResult(trigger, start_date, end_date, "succeeded", "delivered", delivered_ids)
-    if record is not None:
-        record(result)
+    _record_safely(record, result)
     return result
 
 
