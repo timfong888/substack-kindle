@@ -110,6 +110,23 @@ def test_approval_email_without_amazon_link_is_ignored():
     assert pending is None  # link host is not an Amazon domain
 
 
+@pytest.mark.parametrize(
+    "evil_url",
+    [
+        "https://amazon.com.evil.example/approve",  # lookalike suffix
+        "https://www.amazon.com.evil.example/approve",
+        "https://amazon.com@evil.example/approve",  # userinfo spoof (host is evil.example)
+        "https://evilamazon.com/approve",  # no dot boundary before amazon.com
+    ],
+)
+def test_amazon_lookalike_approval_link_is_rejected(evil_url):
+    # Host validation must not be fooled by lookalike suffixes or userinfo tricks.
+    body = f'<p>Approve your email <a href="{evil_url}">here</a>.</p>'
+    msg = _amazon_email(body=body)
+    pending = detect_pending_approval(msg, window_open=True, is_authentic=_authentic)
+    assert pending is None
+
+
 def test_confirm_performs_one_tap_click_only_when_called():
     pending = detect_pending_approval(_amazon_email(), window_open=True, is_authentic=_authentic)
     spy = ClickSpy()
