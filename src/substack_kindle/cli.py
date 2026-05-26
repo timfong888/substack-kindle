@@ -8,9 +8,23 @@ collect -> build -> send -> notify pipeline for a window.
 
 from __future__ import annotations
 
+import argparse
+import json
+import os
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
-from substack_kindle.adapters.json_store import JsonConfigStore
+from substack_kindle.adapters.gmail_messages import load_messages
+from substack_kindle.adapters.json_store import JsonConfigStore, JsonProcessedStateStore
+from substack_kindle.adapters.postmark_http import make_http_post, make_send_email
+from substack_kindle.job_epub import JobSection, build_job_epub
+from substack_kindle.postmark import send_epub
+from substack_kindle.runner import load_runtime_config
+from substack_kindle.spike import SpikeConfig, run_spike
+
+# Module-level HTTP seam: ``None`` means "use the live httpx transport"; tests
+# monkeypatch this to a fake ``(url, json, headers) -> response`` callable.
+_client_post = None
 
 
 def seed_senders(file_path: str | Path, customer_id: str, store: JsonConfigStore) -> list[str]:
@@ -32,3 +46,149 @@ def seed_senders(file_path: str | Path, customer_id: str, store: JsonConfigStore
     for sender in normalized:
         store.add_approved_source(customer_id, sender)
     return normalized
+
+
+def build_window(name: str, now: datetime) -> tuple[datetime, datetime]:
+    """Resolve a named window to a tz-aware ``(start, end)`` pair.
+
+    ``"yesterday"`` returns ``[00:00:00, 23:59:59]`` of the day before ``now``,
+    preserving ``now``'s timezone.
+    """
+    if name != "yesterday":
+        raise ValueError(f"unsupported window {name!r}")
+    tz = now.tzinfo
+    if tz is None:
+        raise ValueError("now must be timezone-aware")
+    prior = (now - timedelta(days=1)).date()
+    start = datetime.combine(prior, time(0, 0, 0), tzinfo=tz)
+    end = datetime.combine(prior, time(23, 59, 59), tzinfo=tz)
+    return start, end
+
+
+def _store_paths(store_dir: str | Path) -> tuple[Path, Path]:
+    base = Path(store_dir)
+    return base / "config.json", base / "state.json"
+
+
+def _cmd_seed_senders(args: argparse.Namespace) -> int:
+    config_path, _ = _store_paths(args.store)
+    store = JsonConfigStore(config_path)
+    added = seed_senders(args.file, args.customer, store)
+    print(f"seeded {len(added)} approved senders for {args.customer!r}")
+    return 0
+
+
+def _cmd_fetch_template(args: argparse.Namespace) -> int:
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"messages": []}, indent=2), encoding="utf-8")
+    print(f"wrote messages.json skeleton to {out}")
+    return 0
+
+
+def _cmd_test_send(args: argparse.Namespace) -> int:
+    runtime = load_runtime_config(os.environ)
+    epub_bytes = build_job_epub(
+        [JobSection("Test", "# Hello\n\nThis is a Send-to-Kindle test.")],
+        book_title="Test",
+    )
+    http_post = make_http_post(client_post=_client_post)
+    result = send_epub(
+        epub_bytes=epub_bytes,
+        to=args.to,
+        from_=runtime.whitelist_email,
+        filename="test.epub",
+        server_token=runtime.postmark_server_token,
+        http_post=http_post,
+    )
+    print(f"test EPUB sent to {result.to} (MessageID={result.message_id})")
+    return 0
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    runtime = load_runtime_config(os.environ)
+    config_path, state_path = _store_paths(args.store)
+    config_store = JsonConfigStore(config_path)
+    cfg = config_store.get(args.customer)
+    if cfg is None:
+        print(f"no config stored for customer {args.customer!r}")
+        return 1
+    state_store = JsonProcessedStateStore(state_path)
+
+    incoming, bodies = load_messages(args.messages)
+    window = build_window(args.window, datetime.now().astimezone())
+
+    http_post = make_http_post(client_post=_client_post)
+
+    def send_epub_adapter(*, epub_bytes, to, filename):
+        return send_epub(
+            epub_bytes=epub_bytes,
+            to=to,
+            from_=runtime.whitelist_email,
+            filename=filename,
+            server_token=runtime.postmark_server_token,
+            http_post=http_post,
+        )
+
+    send_email = make_send_email(
+        server_token=runtime.postmark_server_token,
+        from_=runtime.whitelist_email,
+        client_post=_client_post,
+    )
+
+    spike_cfg = SpikeConfig(
+        customer_id=cfg.customer_id,
+        recipient_email=cfg.recipient_email,
+        kindle_email=cfg.kindle_email,
+        approved_sources=list(cfg.approved_sources),
+    )
+    result = run_spike(
+        spike_cfg,
+        incoming=incoming,
+        bodies=bodies,
+        window=window,
+        send_epub=send_epub_adapter,
+        send_email=send_email,
+        is_delivered=state_store.is_delivered,
+        mark_delivered=state_store.mark_delivered,
+    )
+    print(
+        f"job {result.status}/{result.outcome}; "
+        f"delivered {len(result.delivered_newsletter_ids)} newsletter(s)"
+    )
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="substack-kindle")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_seed = sub.add_parser("seed-senders", help="ingest approved senders from a file")
+    p_seed.add_argument("--file", required=True)
+    p_seed.add_argument("--customer", required=True)
+    p_seed.add_argument("--store", required=True)
+    p_seed.set_defaults(func=_cmd_seed_senders)
+
+    p_tmpl = sub.add_parser("fetch-template", help="write an empty messages.json skeleton")
+    p_tmpl.add_argument("--out", required=True)
+    p_tmpl.set_defaults(func=_cmd_fetch_template)
+
+    p_test = sub.add_parser("test-send", help="send a tiny known EPUB to a Kindle address")
+    p_test.add_argument("--to", required=True)
+    p_test.add_argument("--store", required=True)
+    p_test.set_defaults(func=_cmd_test_send)
+
+    p_run = sub.add_parser("run", help="run the full pipeline for a window")
+    p_run.add_argument("--window", default="yesterday")
+    p_run.add_argument("--messages", required=True)
+    p_run.add_argument("--customer", required=True)
+    p_run.add_argument("--store", required=True)
+    p_run.set_defaults(func=_cmd_run)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
