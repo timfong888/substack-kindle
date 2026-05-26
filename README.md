@@ -39,3 +39,5 @@ A change reaches `main` only after: **CI tests pass** + **Greptile review comple
 ## Security
 
 This is a **public repository**. Never commit secrets. See [SECURITY.md](SECURITY.md).
+
+<!-- greptile status-check probe 2026-05-26T01:04:15Z -->
