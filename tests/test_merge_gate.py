@@ -84,3 +84,48 @@ def test_module_has_no_force_push_capability():
 def test_negative_approvals_rejected():
     with pytest.raises(ValueError, match="approvals must be"):
         GateStatus(ci_passed=True, greptile_complete=True, approvals=-1)
+
+
+# --- Fresh-review hardening (prevents the PR #39 case: a fix commit merged
+# --- before Greptile re-reviewed the new HEAD). ---
+
+
+def test_fresh_review_on_head_is_mergeable():
+    status = _ready(head_sha="abc123", greptile_reviewed_sha="abc123")
+    assert is_mergeable(status) is True
+    assert gate_blockers(status) == []
+
+
+def test_stale_review_blocks_merge():
+    # Greptile reviewed an earlier commit; a newer commit is now HEAD.
+    status = _ready(head_sha="def456", greptile_reviewed_sha="abc123")
+    assert is_mergeable(status) is False
+    assert decide(status) is Decision.FLAG
+    assert any("stale" in b.lower() for b in gate_blockers(status))
+
+
+def test_head_never_reviewed_blocks_merge():
+    # HEAD is known but Greptile has not reviewed any SHA yet.
+    status = _ready(head_sha="def456", greptile_reviewed_sha=None)
+    assert is_mergeable(status) is False
+    assert any("stale" in b.lower() for b in gate_blockers(status))
+
+
+def test_open_blocking_findings_block_merge():
+    status = _ready(
+        head_sha="abc123",
+        greptile_reviewed_sha="abc123",
+        greptile_open_blocking_findings=2,
+    )
+    assert is_mergeable(status) is False
+    assert any("finding" in b.lower() for b in gate_blockers(status))
+
+
+def test_negative_findings_rejected():
+    with pytest.raises(ValueError, match="findings must be"):
+        GateStatus(
+            ci_passed=True,
+            greptile_complete=True,
+            approvals=1,
+            greptile_open_blocking_findings=-1,
+        )
