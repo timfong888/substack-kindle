@@ -22,7 +22,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from email.utils import parseaddr
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 # Trusted Amazon sender domains and approval-link hosts.
@@ -150,7 +150,9 @@ def select_pending_approval(
         m for m in messages
         if m.received_at is not None and m.received_at >= since_epoch - skew
     ]
-    for message in sorted(fresh, key=lambda m: m.received_at, reverse=True):
+    # received_at is non-None for every message in `fresh` (filtered above);
+    # cast so strict type-checkers accept it as the sort key.
+    for message in sorted(fresh, key=lambda m: cast(float, m.received_at), reverse=True):
         pending = detect_pending_approval(
             message, window_open=window_open, is_authentic=is_authentic
         )
