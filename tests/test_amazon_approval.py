@@ -14,6 +14,7 @@ from substack_kindle.amazon_approval import (
     InboundEmail,
     confirm_pending_approval,
     detect_pending_approval,
+    select_pending_approval,
 )
 
 APPROVAL_BODY = (
@@ -140,3 +141,88 @@ def test_confirm_rejects_none():
     with pytest.raises(ValueError):
         confirm_pending_approval(None, click=spy)
     assert spy.clicked == []
+
+
+# --- Recency-aware selection across multiple candidates (SAT-262) -------------
+# Amazon's window keeps prior verification/approval emails live for ~48h. Picking
+# a stale leftover yields a dead link, so the selector must choose the newest
+# email that arrived after the request was initiated, and fail closed otherwise.
+
+_FRESH_URL = "https://www.amazon.com/gp/f.html?approve=fresh"
+_STALE_URL = "https://www.amazon.com/gp/f.html?approve=stale"
+
+
+def _approval_at(received_at, approve_token):
+    return InboundEmail(
+        from_address="no-reply@amazon.com",
+        subject="Approve your email",
+        body=f'<p>Approve <a href="https://www.amazon.com/gp/f.html?approve={approve_token}">here</a>.</p>',
+        received_at=received_at,
+    )
+
+
+def test_selects_newest_approval_after_request_time():
+    sent_at = 1000.0
+    messages = [
+        _approval_at(900.0, "stale"),  # before request -> leftover
+        _approval_at(1100.0, "fresh"),  # after request -> the one
+    ]
+    pending = select_pending_approval(
+        messages, window_open=True, is_authentic=_authentic, since_epoch=sent_at
+    )
+    assert pending is not None
+    assert pending.approval_url == _FRESH_URL
+
+
+def test_stale_only_candidates_yield_none():
+    sent_at = 1000.0
+    messages = [_approval_at(900.0, "stale")]  # only the leftover
+    pending = select_pending_approval(
+        messages, window_open=True, is_authentic=_authentic, since_epoch=sent_at
+    )
+    assert pending is None  # fail closed; do not surface a dead link
+
+
+def test_undated_candidate_is_excluded_cannot_prove_freshness():
+    sent_at = 1000.0
+    messages = [_amazon_email()]  # received_at defaults to None
+    pending = select_pending_approval(
+        messages, window_open=True, is_authentic=_authentic, since_epoch=sent_at
+    )
+    assert pending is None
+
+
+def test_clock_skew_margin_allows_slightly_early_amazon_timestamp():
+    sent_at = 1000.0
+    messages = [_approval_at(970.0, "fresh")]  # 30s before our local send clock
+    pending = select_pending_approval(
+        messages, window_open=True, is_authentic=_authentic, since_epoch=sent_at, skew=60
+    )
+    assert pending is not None
+    assert pending.approval_url == _FRESH_URL
+
+
+def test_selection_still_enforces_security_gates():
+    sent_at = 1000.0
+    # Newest message is a spoof; it must be rejected even though it is freshest.
+    spoof = InboundEmail(
+        from_address="no-reply@amaz0n-security.example",
+        subject="Approve your email",
+        body='<p>Approve <a href="https://evil.example/approve">here</a>.</p>',
+        received_at=1200.0,
+    )
+    genuine = _approval_at(1100.0, "fresh")
+    pending = select_pending_approval(
+        [spoof, genuine], window_open=True, is_authentic=_authentic, since_epoch=sent_at
+    )
+    assert pending is not None
+    assert pending.approval_url == _FRESH_URL
+
+
+def test_selection_respects_onboarding_window():
+    sent_at = 1000.0
+    messages = [_approval_at(1100.0, "fresh")]
+    pending = select_pending_approval(
+        messages, window_open=False, is_authentic=_authentic, since_epoch=sent_at
+    )
+    assert pending is None
