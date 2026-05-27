@@ -1,0 +1,19 @@
+# CodeRabbit PR review config. Non-secret — safe to commit.
+# CodeRabbit runs as a GitHub App (no API key in the repo).
+# Docs: https://docs.coderabbit.ai/reference/configuration
+language: en-US
+reviews:
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_instructions:
+    - path: "**/*.py"
+      instructions: >
+        Enforce the project's security policy (public repo — no secrets): flag any
+        hardcoded credentials, tokens, or per-customer config. Verify the read-only
+        Gmail scope is never violated (no mutating Gmail calls). Confirm new pipeline
+        code keeps body parsing free of LLM calls (Req 8). Require tests for new
+        behavior (TDD) — flag new behavior that ships without a corresponding test.
+chat:
+  auto_reply: true

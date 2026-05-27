@@ -1,7 +1,7 @@
 """Tests for the merge-gate decision logic (SAT-258 / #22, PRD §Development Loop).
 
 Acceptance:
-- The merge gate is enforced: Greptile review complete + CI pass + >= 1 approval.
+- The merge gate is enforced: CodeRabbit review complete + CI pass + >= 1 approval.
 - The outer loop only merges past a satisfied gate; otherwise the story is
   flagged (never force-pushed).
 """
@@ -19,7 +19,7 @@ from substack_kindle.merge_gate import (
 
 
 def _ready(**overrides):
-    base = dict(ci_passed=True, greptile_complete=True, approvals=1)
+    base = dict(ci_passed=True, coderabbit_complete=True, approvals=1)
     base.update(overrides)
     return GateStatus(**base)
 
@@ -38,10 +38,10 @@ def test_failing_ci_blocks_merge():
     assert any("ci" in b.lower() for b in gate_blockers(status))
 
 
-def test_incomplete_greptile_blocks_merge():
-    status = _ready(greptile_complete=False)
+def test_incomplete_coderabbit_blocks_merge():
+    status = _ready(coderabbit_complete=False)
     assert is_mergeable(status) is False
-    assert any("greptile" in b.lower() for b in gate_blockers(status))
+    assert any("coderabbit" in b.lower() for b in gate_blockers(status))
 
 
 def test_missing_approval_blocks_merge():
@@ -57,7 +57,7 @@ def test_required_approvals_is_configurable():
 
 
 def test_blockers_list_all_unmet_conditions():
-    status = GateStatus(ci_passed=False, greptile_complete=False, approvals=0)
+    status = GateStatus(ci_passed=False, coderabbit_complete=False, approvals=0)
     blockers = gate_blockers(status)
     assert len(blockers) == 3
 
@@ -83,4 +83,4 @@ def test_module_has_no_force_push_capability():
 
 def test_negative_approvals_rejected():
     with pytest.raises(ValueError, match="approvals must be"):
-        GateStatus(ci_passed=True, greptile_complete=True, approvals=-1)
+        GateStatus(ci_passed=True, coderabbit_complete=True, approvals=-1)

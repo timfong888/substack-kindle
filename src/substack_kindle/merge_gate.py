@@ -1,7 +1,7 @@
 """Merge-gate decision logic (SAT-258 / PRD §Development Loop).
 
 Encodes the rule the development loop enforces before a story's PR reaches
-``main``: the gate is satisfied only when CI passes, the Greptile review is
+``main``: the gate is satisfied only when CI passes, the CodeRabbit review is
 complete, and there is at least one approval. The loop merges only past a
 satisfied gate; otherwise it FLAGs the story for attention. There is no
 force-push path here by design — this module decides, it never pushes.
@@ -21,7 +21,7 @@ class Decision(enum.Enum):
 @dataclass
 class GateStatus:
     ci_passed: bool
-    greptile_complete: bool
+    coderabbit_complete: bool
     approvals: int
 
     def __post_init__(self) -> None:
@@ -34,8 +34,8 @@ def gate_blockers(status: GateStatus, *, required_approvals: int = 1) -> list[st
     blockers: list[str] = []
     if not status.ci_passed:
         blockers.append("CI (lint + test) has not passed")
-    if not status.greptile_complete:
-        blockers.append("Greptile review is not complete")
+    if not status.coderabbit_complete:
+        blockers.append("CodeRabbit review is not complete")
     if status.approvals < required_approvals:
         blockers.append(
             f"needs {required_approvals} approval(s), has {status.approvals}"
