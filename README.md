@@ -33,7 +33,7 @@ pre-commit install   # enable the secret-scan hook
 
 ### Merge gate
 
-A change reaches `main` only after: **CI tests pass** + **Greptile review complete**
+A change reaches `main` only after: **CI tests pass** + **CodeRabbit review complete**
 + **PR approved**. No direct pushes to `main`. Every story ships with its tests.
 
 ## Security

@@ -8,13 +8,13 @@ The following are NEVER committed:
 
 - Gmail OAuth client secret and tokens
 - Postmark (transactional email / `whitelist_email`) credentials
-- The Greptile API key
 - Any per-customer config values (Kindle addresses, recipient emails, tokens)
 - Any API key, password, or private key of any kind
 
 All secrets are supplied **at runtime** via environment variables or a secrets
 manager. Claude Managed Agents provides credential management — use it. Do not
-hardcode. Non-secret config (e.g. `greptile.json`) MAY be committed.
+hardcode. Non-secret config (e.g. `.coderabbit.yaml`) MAY be committed. Code review
+runs via the CodeRabbit GitHub App, so no review API key lives in the repo or env.
 
 ## Enforcement
 
