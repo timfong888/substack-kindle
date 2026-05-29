@@ -12,8 +12,9 @@ reads as a wall of "badly formatted email addresses". Killing the metadata
 block is what makes the digest readable.
 
 All rules are structural — no LLM. They activate only on Substack-shaped input
-(any substack.com / substackcdn.com URL anywhere in the body), so non-Substack
-emails pass through untouched.
+(template-specific signals: a substackcdn.com URL, a substack.com app-link, or
+the literal "Forwarded this email?" phrase), so a non-Substack email that
+merely *links* to Substack passes through untouched.
 """
 
 from __future__ import annotations
@@ -24,12 +25,27 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup, Tag
 
 # Invisible / preview-pane characters Substack uses to pad the email preview
-# snippet. The cleaner drops paragraphs that contain only these (plus whitespace).
+# snippet. The cleaner drops paragraphs that contain only these (plus
+# whitespace, which is handled separately by `.strip()`). Enumerated via \u
+# escapes — no literal invisible glyphs in source, no broad character ranges,
+# so the set is auditable and grep-able.
 _INVISIBLE_CHARS_RE = re.compile(
-    r"[­͏؜᠎​-‏  ⁠﻿]"
+    "["
+    "­"  # soft hyphen
+    "͏"  # combining grapheme joiner
+    "؜"  # arabic letter mark
+    "᠎"  # mongolian vowel separator
+    "​"  # zero-width space
+    "‌"  # zero-width non-joiner
+    "‍"  # zero-width joiner
+    "‎"  # left-to-right mark
+    "‏"  # right-to-left mark
+    "⁠"  # word joiner
+    "﻿"  # zero-width no-break space / BOM
+    "]"
 )
 
-# Substack icon image paths (in the icon URL's path component).
+# Substack icon image paths (substring match against the icon URL).
 _ICON_PATH_PATTERNS = (
     "LucideHeart",
     "LucideComments",
@@ -50,8 +66,19 @@ _ICON_LINK_HREF_HINTS = (
     "utm_campaign=email-read-in-app",
 )
 
-_SUBSTACK_HOST_SUFFIXES = ("substack.com", "substackcdn.com")
-_FOOTER_TEXT_HINTS = ("Substack Inc", "Unsubscribe", "Get the app")
+# Text-match hints are casefolded before comparison so Substack changing the
+# casing (or shipping a localised variant in English) won't silently turn the
+# cleaner off. Each entry must itself be casefolded for the match to work.
+_FORWARDED_PHRASE_CF = "forwarded this email"
+_FOOTER_TEXT_HINTS_CF = ("substack inc", "unsubscribe", "get the app")
+
+# Template-specific signal hosts. Activate the cleaner only when one of these
+# is present — a non-Substack email that merely links to substack.com via the
+# standard www host should NOT match.
+_TEMPLATE_HOST_SUFFIXES = ("substackcdn.com",)
+# Path fragments that mark a URL as part of Substack's email template
+# specifically (deep links / redirect tokens), not just a www.substack.com link.
+_TEMPLATE_PATH_HINTS = ("substack.com/app-link/", "substack.com/redirect/")
 
 
 def _host(url: str | None) -> str:
@@ -60,23 +87,34 @@ def _host(url: str | None) -> str:
     return (urlparse(url).hostname or "").lower()
 
 
-def _is_substack_host(url: str | None) -> bool:
+def _is_template_host(url: str | None) -> bool:
     h = _host(url)
-    return any(h == s or h.endswith("." + s) for s in _SUBSTACK_HOST_SUFFIXES)
+    return any(h == s or h.endswith("." + s) for s in _TEMPLATE_HOST_SUFFIXES)
+
+
+def _is_template_path(url: str | None) -> bool:
+    if not url:
+        return False
+    lowered = url.lower()
+    return any(p in lowered for p in _TEMPLATE_PATH_HINTS)
 
 
 def looks_like_substack(soup: BeautifulSoup) -> bool:
-    """True iff the body carries any Substack-ecosystem URL.
+    """True iff the body carries a Substack-template-specific signal.
 
-    Detection by URL host so we activate the cleaner on the actual Substack
-    template, not on every newsletter that happens to mention Substack.
+    Activates on a substackcdn.com URL, a substack.com deep-link/redirect URL,
+    or the literal "Forwarded this email?" banner phrase. An email that merely
+    links to ``https://www.substack.com/`` does NOT match — that's a generic
+    mention, not the template we want to clean.
     """
     for a in soup.find_all("a", href=True):
-        if _is_substack_host(a["href"]):
+        if _is_template_host(a["href"]) or _is_template_path(a["href"]):
             return True
     for img in soup.find_all("img", src=True):
-        if _is_substack_host(img["src"]):
+        if _is_template_host(img["src"]) or _is_template_path(img["src"]):
             return True
+    if _FORWARDED_PHRASE_CF in soup.get_text().casefold():
+        return True
     return False
 
 
@@ -139,6 +177,11 @@ def _is_link_wrapped_title(h: Tag) -> bool:
     return h.get_text(strip=True) == a.get_text(strip=True)
 
 
+def _text_has_any_casefold(text: str, hints_cf: tuple[str, ...]) -> bool:
+    cf = text.casefold()
+    return any(hint in cf for hint in hints_cf)
+
+
 def clean_substack(soup: BeautifulSoup) -> None:
     """Strip Substack chrome from `soup` in place. Idempotent."""
     # Rule 1 — tracking pixels.
@@ -149,13 +192,12 @@ def clean_substack(soup: BeautifulSoup) -> None:
     # Rule 7 — footer chrome (unsubscribe, "© Substack Inc.", "Get the app").
     # Done early so its text doesn't leak into other rules' detection.
     for el in list(soup.find_all(["table", "div"])):
-        text = el.get_text()
-        if any(hint in text for hint in _FOOTER_TEXT_HINTS):
+        if _text_has_any_casefold(el.get_text(), _FOOTER_TEXT_HINTS_CF):
             el.decompose()
 
     # Rule 3 — "Forwarded this email? Subscribe here" banner.
     for el in list(soup.find_all(["table", "div"])):
-        if "Forwarded this email" in el.get_text():
+        if _FORWARDED_PHRASE_CF in el.get_text().casefold():
             el.decompose()
 
     # Rule 2 — invisible preview-pane padding paragraphs.
@@ -170,7 +212,7 @@ def clean_substack(soup: BeautifulSoup) -> None:
 
     # Rule 5 — author + icon metadata table.
     for table in list(soup.find_all("table")):
-        if "READ IN APP" in table.get_text():
+        if "read in app" in table.get_text().casefold():
             table.decompose()
             continue
         anchors = table.find_all("a", href=True)

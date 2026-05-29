@@ -139,6 +139,10 @@ def test_redirect_wrapped_content_image_keeps_image_drops_anchor():
 
 def test_footer_unsubscribe_and_copyright_dropped():
     html = _wrap(
+        # Realistic emails always carry a Substack tracking pixel — including
+        # one here is also what activates the cleaner under the tightened
+        # template-specific detection.
+        '<img src="https://eotrx.substackcdn.com/o/abc/p.gif" />'
         '<p>Last real paragraph.</p>'
         '<table><tr><td>'
         '© 2026 Substack Inc. '
@@ -168,3 +172,36 @@ def test_non_substack_email_passes_through_unchanged():
     assert "Lenny Newsletter" in md
     assert "Subscribe at" in md
     assert "Body content here." in md
+
+
+def test_generic_substack_link_does_not_activate_cleaner():
+    # A non-Substack email that merely *mentions* substack.com (e.g. a "We're
+    # also on Substack" link) must NOT be cleaned — otherwise we'd strip the
+    # other newsletter's footer / unsubscribe block as if it were Substack's.
+    html = _wrap(
+        '<h1>Other Newsletter</h1>'
+        '<p>Body content.</p>'
+        '<table><tr><td>Unsubscribe from this newsletter</td></tr></table>'
+        '<p>Also follow us on <a href="https://www.substack.com/">Substack</a>.</p>'
+    )
+    md = html_to_markdown(html)
+    # Footer-shaped block survives because the cleaner never activated:
+    # generic www.substack.com is not a template-specific signal.
+    assert "Other Newsletter" in md
+    assert "Body content." in md
+    assert "Unsubscribe from this newsletter" in md
+
+
+def test_footer_match_is_case_insensitive():
+    # If Substack ships SHOUTY or lowercased footer text, the cleaner should
+    # still strip it. Detection uses casefold internally.
+    html = _wrap(
+        '<p>Real article body.</p>'
+        '<table><tr><td>'
+        '© 2026 SUBSTACK INC. <a href="https://substack.com/app-link/post?id=1">UNSUBSCRIBE</a>'
+        '</td></tr></table>'
+    )
+    md = html_to_markdown(html)
+    assert "Real article body." in md
+    assert "SUBSTACK INC" not in md
+    assert "UNSUBSCRIBE" not in md
