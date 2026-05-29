@@ -73,7 +73,7 @@ def test_forwarded_this_email_banner_is_dropped():
 def test_link_wrapped_title_heading_is_dropped():
     html = _wrap(
         '<h1>Pax Silica</h1>'  # the real title — keep
-        '<h1><a href="https://substack.com/app-link/post?publication_id=1&post_id=2">Pax Silica</a></h1>'
+        '<h1><a href="https://substack.com/app-link/post?id=1">Pax Silica</a></h1>'
         '<p>Body.</p>'
     )
     md = html_to_markdown(html)
@@ -92,15 +92,16 @@ def test_author_and_icon_row_table_is_dropped():
         '<tr><td>May 24</td></tr>'
         # Heart, comments, share, restack, "READ IN APP" — each an icon-only anchor.
         '<tr><td><a href="https://substack.com/app-link/post?submitLike=true">'
-        '<img src="https://substackcdn.com/image/fetch/.../icon/LucideHeart" /></a></td></tr>'
+        '<img src="https://substackcdn.com/icon/LucideHeart" /></a></td></tr>'
         '<tr><td><a href="https://substack.com/app-link/post?comments=true">'
-        '<img src="https://substackcdn.com/image/fetch/.../icon/LucideComments" /></a></td></tr>'
+        '<img src="https://substackcdn.com/icon/LucideComments" /></a></td></tr>'
         '<tr><td><a href="https://substack.com/app-link/post?action=share">'
-        '<img src="https://substackcdn.com/image/fetch/.../icon/LucideShare2" /></a></td></tr>'
+        '<img src="https://substackcdn.com/icon/LucideShare2" /></a></td></tr>'
         '<tr><td><a href="https://substack.com/redirect/2/abc">'
-        '<img src="https://substackcdn.com/image/fetch/.../icon/notes__NoteRestackIcon" /></a></td></tr>'
+        '<img src="https://substackcdn.com/icon/notes__NoteRestackIcon" /></a></td></tr>'
         '<tr><td>READ IN APP'
-        '<a href="https://open.substack.com/pub/x/p/y"><img src="https://substackcdn.com/.../LucideArrowUpRight" /></a>'
+        '<a href="https://open.substack.com/pub/x/p/y">'
+        '<img src="https://substackcdn.com/icon/LucideArrowUpRight" /></a>'
         '</td></tr>'
         '</table>'
         '<p>Hello, this is the article body.</p>'
@@ -123,12 +124,12 @@ def test_redirect_wrapped_content_image_keeps_image_drops_anchor():
     html = _wrap(
         '<p>Intro.</p>'
         '<a href="https://substack.com/redirect/abc">'
-        '<img src="https://substack-post-media.s3.amazonaws.com/public/images/hero.png" alt="hero"/>'
+        '<img src="https://substack-post-media.s3.amazonaws.com/images/hero.png" alt="hero"/>'
         '</a>'
         '<p>Outro.</p>'
     )
     md = html_to_markdown(html)
-    assert "substack-post-media.s3.amazonaws.com/public/images/hero.png" in md
+    assert "substack-post-media.s3.amazonaws.com/images/hero.png" in md
     # The wrapping redirect URL must not appear as link text.
     assert "substack.com/redirect" not in md
 
