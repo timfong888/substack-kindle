@@ -144,3 +144,27 @@ def test_special_characters_in_titles_produce_valid_epub():
     assert links[0][0] == "Growth & Strategy <Weekly>"
     with _zip(data) as zf:
         assert any(n.endswith(".opf") for n in zf.namelist())
+
+
+# --- Author field (SAT-264) ---------------------------------------------------
+# A constant author groups every digest under one entry in the Kindle library,
+# instead of scattering them under "Unknown".
+
+
+def _opf_text(data: bytes) -> str:
+    with _zip(data) as zf:
+        opf_name = next(n for n in zf.namelist() if n.endswith(".opf"))
+        return zf.read(opf_name).decode("utf-8", errors="replace")
+
+
+def test_default_author_is_substack_digest():
+    data = build_job_epub(_sections(2), book_title="Substacks · May 19–26, 2026")
+    assert "<dc:creator" in _opf_text(data)
+    assert ">Substack Digest<" in _opf_text(data)
+
+
+def test_explicit_author_is_preserved():
+    data = build_job_epub(
+        _sections(2), book_title="Custom", author="Weekly Mix"
+    )
+    assert ">Weekly Mix<" in _opf_text(data)

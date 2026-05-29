@@ -44,16 +44,28 @@ def _to_bytes(book: epub.EpubBook) -> bytes:
             return fh.read()
 
 
+_DEFAULT_AUTHOR = "Substack Digest"
+
+
 def build_job_epub(
-    sections: list[JobSection], *, book_title: str, identifier: str | None = None
+    sections: list[JobSection],
+    *,
+    book_title: str,
+    identifier: str | None = None,
+    author: str = _DEFAULT_AUTHOR,
 ) -> bytes:
-    """Build a single EPUB for a job from its (already deduped) sections."""
+    """Build a single EPUB for a job from its (already deduped) sections.
+
+    A constant ``author`` (``dc:creator``) groups every issue under one entry
+    on the Kindle library — see SAT-264.
+    """
     if not sections:
         raise ValueError("a job EPUB needs at least one newsletter section")
 
     book = epub.EpubBook()
     book.set_identifier(identifier or f"urn:job:{quote(book_title, safe='')}")
     book.set_title(book_title)
+    book.add_author(author)
     book.set_language("en")
 
     chapters = []
