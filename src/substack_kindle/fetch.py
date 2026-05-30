@@ -133,7 +133,15 @@ def fetch_newsletters(
     ``approved_sources``; messages outside the window or from un-approved
     senders are dropped (a belt-and-suspenders filter, since the Gmail query
     already narrows server-side).
+
+    An empty ``approved_sources`` is treated as a misconfiguration: we refuse
+    to issue a mailbox-wide Gmail query, since the resulting filter would drop
+    every message anyway and the read is wasted (and the contract is "fetch
+    from approved senders" — an empty allowlist is nonsense, not an empty
+    result).
     """
+    if not approved_sources:
+        raise ValueError("approved_sources must not be empty")
     approved = {s.casefold() for s in approved_sources}
     query = _gmail_query(approved_sources, window_start, window_end)
     ids = client.list_message_ids(query=query)

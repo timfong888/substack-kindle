@@ -118,11 +118,23 @@ def build_gmail_client(bundle_dir: Path) -> ReadOnlyGmailClient:
 
 
 def _load_cached(creds_file: Path):
+    """Rebuild ``Credentials`` from disk, preserving ``expiry``.
+
+    google-auth treats ``expiry=None`` as "never expires" — both the ``valid``
+    and ``expired`` properties short-circuit, so a cached token would never be
+    refreshed and ``build_gmail_client`` would always fall through to the
+    interactive flow once the in-memory token actually expired. Persisting and
+    restoring the expiry keeps the refresh path live.
+    """
     if not creds_file.exists():
         return None
+    from datetime import datetime as _dt
+
     from google.oauth2.credentials import Credentials
 
     data = json.loads(creds_file.read_text())
+    expiry_raw = data.get("expiry")
+    expiry = _dt.fromisoformat(expiry_raw) if expiry_raw else None
     return Credentials(
         token=data.get("token"),
         refresh_token=data.get("refresh_token"),
@@ -130,11 +142,13 @@ def _load_cached(creds_file: Path):
         client_secret=data.get("client_secret"),
         token_uri=data.get("token_uri", TOKEN_URI),
         scopes=[GMAIL_READONLY_SCOPE],
+        expiry=expiry,
     )
 
 
 def _persist(creds_file: Path, creds) -> None:
     creds_file.parent.mkdir(parents=True, exist_ok=True)
+    expiry = getattr(creds, "expiry", None)
     payload = {
         "type": "authorized_user",
         "client_id": creds.client_id,
@@ -142,6 +156,9 @@ def _persist(creds_file: Path, creds) -> None:
         "refresh_token": creds.refresh_token,
         "token": creds.token,
         "token_uri": creds.token_uri,
+        # Stored as ISO-8601; google-auth uses naive UTC datetimes for expiry,
+        # so isoformat() is lossless here.
+        "expiry": expiry.isoformat() if expiry else None,
     }
     creds_file.write_text(json.dumps(payload, indent=2))
     os.chmod(creds_file, 0o600)

@@ -47,10 +47,12 @@ class _RecordingHttpxPost:
 
 
 def _env(**overrides):
+    # Neutral fixture values — the real production values live in env at run
+    # time. See .env.example for the documented WHITELIST_EMAIL constraint.
     base = {
-        "POSTMARK_SERVER_TOKEN": "tok",
-        "WHITELIST_EMAIL": "kindle_whitelist@fong888.com",
-        "KINDLE_EMAIL": "timfong888@kindle.com",
+        "POSTMARK_SERVER_TOKEN": "postmark-token",
+        "WHITELIST_EMAIL": "digest@example.com",
+        "KINDLE_EMAIL": "reader@kindle.com",
     }
     base.update(overrides)
     return base
@@ -83,9 +85,9 @@ def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch):
     assert len(recorder.calls) == 1
     call = recorder.calls[0]
     assert call["url"] == "https://api.postmarkapp.com/email"
-    assert call["json"]["From"] == "kindle_whitelist@fong888.com"
-    assert call["json"]["To"] == "timfong888@kindle.com"
-    assert call["headers"]["X-Postmark-Server-Token"] == "tok"
+    assert call["json"]["From"] == "digest@example.com"
+    assert call["json"]["To"] == "reader@kindle.com"
+    assert call["headers"]["X-Postmark-Server-Token"] == "postmark-token"
     assert len(call["json"]["Attachments"]) == 1
     attachment = call["json"]["Attachments"][0]
     assert attachment["ContentType"] == "application/epub+zip"
@@ -98,9 +100,22 @@ def test_main_refuses_to_run_when_local_parts_collide():
     with pytest.raises(LocalPartCollision):
         main(
             argv=["--start", "2026-05-03", "--end", "2026-05-09"],
-            env=_env(WHITELIST_EMAIL="timfong888@anything.com"),
+            env=_env(WHITELIST_EMAIL="reader@anything.com"),
             build_client=lambda env: _StubGmailClient([]),
             approved_sources=[],
+            http_post=lambda *a, **k: None,
+        )
+
+
+def test_main_rejects_inverted_date_range():
+    # --start after --end is nonsense; argparse should exit with a clear error
+    # rather than silently issue an empty Gmail query and "succeed".
+    with pytest.raises(SystemExit):
+        main(
+            argv=["--start", "2026-05-09", "--end", "2026-05-03"],
+            env=_env(),
+            build_client=lambda env: _StubGmailClient([]),
+            approved_sources=["lenny@substack.com"],
             http_post=lambda *a, **k: None,
         )
 

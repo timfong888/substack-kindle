@@ -91,7 +91,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
                         help="Window start date (inclusive), YYYY-MM-DD.")
     parser.add_argument("--end", type=_parse_iso_date, required=True,
                         help="Window end date (inclusive), YYYY-MM-DD.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    # Fail fast on an inverted window so we don't issue a Gmail query that
+    # cannot match anything and quietly succeed with an empty digest.
+    if args.start > args.end:
+        parser.error("--start must be on or before --end")
+    return args
 
 
 def _end_of_day(d: datetime) -> datetime:

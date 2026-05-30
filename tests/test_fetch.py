@@ -191,3 +191,20 @@ def test_fetch_newsletters_uses_gmail_query_to_narrow_results():
     assert "from:" in query and "lenny@substack.com" in query
     assert "after:2026/05/03" in query
     assert "before:2026/05/10" in query  # Gmail "before:" is exclusive; +1 day
+
+
+def test_fetch_newsletters_rejects_empty_approved_sources():
+    # An empty allowlist is a misconfiguration: the function refuses rather
+    # than issuing a mailbox-wide Gmail query that drops every result.
+    import pytest
+
+    client = _StubClient(ids=[], messages={})
+    with pytest.raises(ValueError, match="approved_sources"):
+        fetch_newsletters(
+            client,
+            approved_sources=[],
+            window_start=datetime(2026, 5, 3, tzinfo=UTC),
+            window_end=datetime(2026, 5, 9, 23, 59, 59, tzinfo=UTC),
+        )
+    # Crucially, no Gmail call was made.
+    assert client.list_calls == []
