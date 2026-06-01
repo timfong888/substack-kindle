@@ -85,6 +85,57 @@ def test_link_wrapped_title_heading_is_dropped():
 # --- Rule 5: author / icon metadata table ------------------------------------
 
 
+def test_icon_table_nested_in_wrapper_does_not_eat_body(_real_substack_layout=None):
+    """Regression for SAT-275: a real Substack email's icon table is *nested*
+    inside the wrapper layout table that also holds the article body. The
+    cleaner must drop only the inner icon table, not the outer wrapper —
+    otherwise the entire body goes with it.
+    """
+    html = _wrap(
+        '<table>'  # outer wrapper (the whole email body lives in this table)
+        '<tr><td>'
+        '<p>This is the real article body paragraph one.</p>'
+        '<p>And this is the article body paragraph two.</p>'
+        '<table>'  # nested icon-row table — chrome, MUST be removed
+        '<tr><td><a href="https://substack.com/app-link/post?submitLike=true">'
+        '<img src="https://substackcdn.com/icon/LucideHeart" /></a></td></tr>'
+        '<tr><td><a href="https://substack.com/app-link/post?comments=true">'
+        '<img src="https://substackcdn.com/icon/LucideComments" /></a></td></tr>'
+        '<tr><td><a href="https://substack.com/app-link/post?action=share">'
+        '<img src="https://substackcdn.com/icon/LucideShare2" /></a></td></tr>'
+        '</table>'
+        '<p>And paragraph three after the icon row.</p>'
+        '</td></tr>'
+        '</table>'
+    )
+    md = html_to_markdown(html)
+    # Body paragraphs MUST survive — this is the regression we're guarding.
+    assert "This is the real article body paragraph one." in md
+    assert "article body paragraph two." in md
+    assert "paragraph three after the icon row." in md
+    # Inner icon table chrome must be gone.
+    assert "LucideHeart" not in md
+    assert "LucideComments" not in md
+    assert "LucideShare2" not in md
+    assert "app-link/post" not in md
+
+
+def test_img_without_attrs_does_not_crash_tracking_pixel_check():
+    """Regression for the second SAT-275 bug: BS4 can yield img-like Tag
+    objects whose ``.attrs`` is None on certain malformed real-world HTML.
+    The tracking-pixel check must guard against that rather than crash.
+    """
+    from bs4 import BeautifulSoup
+
+    from substack_kindle.substack_clean import _is_tracking_pixel
+
+    soup = BeautifulSoup('<img>', "html.parser")
+    img = soup.find("img")
+    # Simulate the malformed case where attrs is None (seen in production).
+    img.attrs = None
+    assert _is_tracking_pixel(img) is False
+
+
 def test_author_and_icon_row_table_is_dropped():
     html = _wrap(
         '<table>'

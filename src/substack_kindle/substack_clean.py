@@ -121,6 +121,11 @@ def looks_like_substack(soup: BeautifulSoup) -> bool:
 def _is_tracking_pixel(img: Tag) -> bool:
     # Substack opens every email with a pixel on eotrx.substackcdn.com (the
     # "engagement" subdomain). The path is typically ``/o/<id>/p.gif``.
+    # BS4 can occasionally yield Tag-like nodes whose ``.attrs`` is None
+    # (malformed self-closing tags in real Substack HTML); guard rather than
+    # crash on those — they cannot be tracking pixels anyway.
+    if not getattr(img, "attrs", None):
+        return False
     return _host(img.get("src")) == "eotrx.substackcdn.com"
 
 
@@ -182,6 +187,40 @@ def _text_has_any_casefold(text: str, hints_cf: tuple[str, ...]) -> bool:
     return any(hint in cf for hint in hints_cf)
 
 
+# Conservative upper bound on the visible-text length of Substack's author+icon
+# metadata table. In real emails this block carries the author name, "May 24",
+# and the four icon labels — well under 300 chars. The article body, in
+# contrast, runs to thousands of chars. Picking 600 leaves room for slightly
+# chattier templates without risking a body match.
+_METADATA_TABLE_TEXT_CAP = 600
+
+
+def _innermost_first(soup: BeautifulSoup, names: list[str]) -> list[Tag]:
+    """Return matching elements ordered deepest-first.
+
+    Real Substack HTML nests every chrome block inside an outer wrapper that
+    holds the article body. ``find_all`` returns elements in document order
+    (outermost-first), so a rule that decomposes a container on a text match
+    would clobber the wrapper — and the body inside it — before it ever got
+    to the small block we actually wanted to strip. Processing innermost-first
+    means the chrome block gets removed first; the wrapper's text no longer
+    matches on the next iteration.
+    """
+    return sorted(soup.find_all(names), key=lambda t: -len(list(t.parents)))
+
+
+def _looks_like_metadata_table(table: Tag) -> bool:
+    """Cheap, conservative test that ``table`` is the metadata block, not a
+    wrapper holding the article body.
+
+    The icon/author metadata table is small (a handful of rows, each with one
+    icon-link or the author name + date). Article-body wrappers have far more
+    text. Treating only short tables as candidates means a misclassified
+    wrapper would have to also be a tiny one — practically harmless.
+    """
+    return len(table.get_text(strip=True)) <= _METADATA_TABLE_TEXT_CAP
+
+
 def clean_substack(soup: BeautifulSoup) -> None:
     """Strip Substack chrome from `soup` in place. Idempotent."""
     # Rule 1 — tracking pixels.
@@ -190,13 +229,18 @@ def clean_substack(soup: BeautifulSoup) -> None:
             img.decompose()
 
     # Rule 7 — footer chrome (unsubscribe, "© Substack Inc.", "Get the app").
-    # Done early so its text doesn't leak into other rules' detection.
-    for el in list(soup.find_all(["table", "div"])):
+    # SAT-275 regression guard (same shape as rule 5): the trigger phrases also
+    # appear in the outer wrapper table's transitive text, so a naive
+    # document-order walk would decompose the wrapper and lose the article
+    # body. Process innermost-first so the small chrome block gets removed
+    # before its enclosing wrapper is evaluated.
+    for el in _innermost_first(soup, ["table", "div"]):
         if _text_has_any_casefold(el.get_text(), _FOOTER_TEXT_HINTS_CF):
             el.decompose()
 
     # Rule 3 — "Forwarded this email? Subscribe here" banner.
-    for el in list(soup.find_all(["table", "div"])):
+    # Same SAT-275 guard as rule 7: innermost-first iteration.
+    for el in _innermost_first(soup, ["table", "div"]):
         if _FORWARDED_PHRASE_CF in el.get_text().casefold():
             el.decompose()
 
@@ -211,7 +255,22 @@ def clean_substack(soup: BeautifulSoup) -> None:
             h.decompose()
 
     # Rule 5 — author + icon metadata table.
-    for table in list(soup.find_all("table")):
+    #
+    # SAT-275 regression guard: Substack's real HTML always nests this little
+    # metadata table inside a much larger wrapper `<table>` that also holds
+    # the article body. ``find_all("table")`` returns elements in document
+    # order — outermost first — so iterating naively would match the wrapper
+    # (it transitively contains the icon anchors via its child) and decompose
+    # the whole article. We therefore:
+    #
+    #   1. process tables *innermost-first* so a wrapper no longer matches
+    #      after its icon-table child has been removed; and
+    #   2. require the decomposed table to actually *look like* the metadata
+    #      table (short text content, mostly icons) — a wrapper that survives
+    #      step 1 won't be accidentally targeted by step 2 either.
+    for table in _innermost_first(soup, ["table"]):
+        if not _looks_like_metadata_table(table):
+            continue
         if "read in app" in table.get_text().casefold():
             table.decompose()
             continue
