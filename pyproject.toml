@@ -1,6 +1,9 @@
 [project]
 name = "substack-kindle"
-version = "0.0.1"
+# Bumped here manually; a release-please-style GitHub Action on `main` will
+# auto-bump going forward (SAT-272). Service subheader reads this via
+# importlib.metadata, so a bump here flips every digest's "v{N}" without code.
+version = "0.2.0"
 description = "Newsletter-to-Kindle service: Gmail (read-only) -> EPUB -> Kindle via Postmark."
 readme = "README.md"
 requires-python = ">=3.11"

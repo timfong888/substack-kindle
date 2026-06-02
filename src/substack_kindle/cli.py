@@ -32,6 +32,7 @@ from .digest_title import format_digest_title
 from .fetch import fetch_newsletters
 from .job_epub import JobSection, build_job_epub
 from .pipeline import ON_DEMAND, run_job
+from .service_version import service_subheader
 from .whitelist_check import ensure_distinct_local_parts
 
 POSTMARK_URL = "https://api.postmarkapp.com/email"
@@ -166,7 +167,9 @@ def main(
 
     def _build_epub(items):
         title = format_digest_title(start_dt.date(), end_dt.date())
-        return build_job_epub(list(items), book_title=title)
+        return build_job_epub(
+            list(items), book_title=title, subtitle=service_subheader()
+        )
 
     def _send(epub_bytes):
         return postmark.send_epub(

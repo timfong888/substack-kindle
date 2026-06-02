@@ -1,54 +1,53 @@
-"""Human-readable digest title for the EPUB delivered to Kindle (SAT-264).
+"""Human-readable digest book-title for the EPUB delivered to Kindle (SAT-272).
 
-Format: ``Substacks · {Mon DD}–{DD, YYYY}`` (en-dash). The fixed prefix and
-ISO-ordered range keep digests grouped and chronologically sorted on the Kindle
-library row. The compact range only repeats month/year when the boundary
-crosses them, which keeps the common (same-month) case short.
+Format: ``Newsletter Digest: {Month D} – {Month D} {YYYY}`` — full month name,
+en-dash with single spaces around it, year once at the end. Replaces the
+SAT-264 shorthand so the title reads like a real book title on the Kindle
+library row, not a header chip. The same month name is repeated on both sides
+even within a single month (e.g. "May 19 – May 26 2026"), which trades a few
+characters for clarity at a glance and avoids the "May 19–26" ambiguity that
+some readers parse as a sub-issue number.
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-_PREFIX = "Substacks"
-_SEP = "·"  # U+00B7 middle dot — readable separator without visual weight.
+_PREFIX = "Newsletter Digest"
 _DASH = "–"  # U+2013 en-dash for ranges, by convention.
 
+# Full month names match Python's calendar.month_name but are spelled out here
+# so the code stays locale-independent (the C locale's %B varies by platform).
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
 
-def _fmt(d: date, *, with_year: bool) -> str:
-    # %b is locale-dependent; tests pin the C locale via short month names like
-    # "May"/"Jun"/"Dec", which match POSIX. If we later localise, this is the
-    # single point to change. Day-of-month uses `d.day` (an int) so the format
-    # stays portable — strftime("%-d") is POSIX-only and ValueErrors on Windows.
-    base = f"{d.strftime('%b')} {d.day}"
-    return f"{base}, {d.year}" if with_year else base
+
+def _month_day(d: date) -> str:
+    """Return the ``Month D`` half of a date (no year)."""
+    return f"{_MONTHS[d.month - 1]} {d.day}"
+
+
+def _month_day_year(d: date) -> str:
+    """Return the ``Month D YYYY`` triple of a date."""
+    return f"{_month_day(d)} {d.year}"
 
 
 def format_digest_title(start: date, end: date) -> str:
-    """Return the EPUB title for a digest covering [start, end] inclusive."""
+    """Return the EPUB title for a digest covering ``[start, end]`` inclusive."""
     if end < start:
         raise ValueError(f"end ({end.isoformat()}) is before start ({start.isoformat()})")
 
     if start == end:
-        return f"{_PREFIX} {_SEP} {_fmt(start, with_year=True)}"
+        # Single-day window: no en-dash, just the one date.
+        return f"{_PREFIX}: {_month_day_year(start)}"
 
     if start.year != end.year:
-        # Cross-year: keep both years explicit so the range is unambiguous.
-        return (
-            f"{_PREFIX} {_SEP} "
-            f"{_fmt(start, with_year=True)}{_DASH}{_fmt(end, with_year=True)}"
-        )
+        # Cross-year: both years are explicit so the range is unambiguous on
+        # December → January boundaries.
+        return f"{_PREFIX}: {_month_day_year(start)} {_DASH} {_month_day_year(end)}"
 
-    if start.month != end.month:
-        # Cross-month, same year: repeat the month name on the end side.
-        return (
-            f"{_PREFIX} {_SEP} "
-            f"{_fmt(start, with_year=False)}{_DASH}{_fmt(end, with_year=True)}"
-        )
-
-    # Same month: collapse to "May 19–26, 2026". Reuse _fmt so any future
-    # format change happens in exactly one place.
-    return (
-        f"{_PREFIX} {_SEP} "
-        f"{_fmt(start, with_year=False)}{_DASH}{end.day}, {end.year}"
-    )
+    # Same year (whether same month or cross-month): the year is shown once,
+    # at the end. The month name is always repeated on both sides for clarity.
+    return f"{_PREFIX}: {_month_day(start)} {_DASH} {_month_day(end)} {start.year}"
