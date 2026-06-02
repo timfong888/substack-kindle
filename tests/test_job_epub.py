@@ -168,3 +168,57 @@ def test_explicit_author_is_preserved():
         _sections(2), book_title="Custom", author="Weekly Mix"
     )
     assert ">Weekly Mix<" in _opf_text(data)
+
+
+# --- Subtitle / front-matter page (SAT-272) -----------------------------------
+# The subheader (e.g. "Newsletters to Kindle v0.2.0") must be visible both in
+# OPF metadata (info panels) and inside the book on the first page.
+
+
+def test_subtitle_writes_dc_description():
+    data = build_job_epub(
+        _sections(2),
+        book_title="Newsletter Digest: May 3 – May 9 2026",
+        subtitle="Newsletters to Kindle v0.2.0",
+    )
+    opf = _opf_text(data)
+    assert "<dc:description" in opf
+    assert ">Newsletters to Kindle v0.2.0<" in opf
+
+
+def test_subtitle_renders_frontmatter_chapter_with_h4():
+    data = build_job_epub(
+        _sections(2),
+        book_title="Newsletter Digest: May 3 – May 9 2026",
+        subtitle="Newsletters to Kindle v0.2.0",
+    )
+    with _zip(data) as zf:
+        names = zf.namelist()
+        assert any(n.endswith("frontmatter.xhtml") for n in names)
+        fm_name = next(n for n in names if n.endswith("frontmatter.xhtml"))
+        fm = zf.read(fm_name).decode("utf-8")
+    assert "<h1>Newsletter Digest: May 3 – May 9 2026</h1>" in fm
+    assert "<h4>Newsletters to Kindle v0.2.0</h4>" in fm
+
+
+def test_subtitle_frontmatter_is_not_in_toc():
+    # The frontmatter chapter is a title page, not a navigable entry.
+    data = build_job_epub(
+        _sections(2),
+        book_title="x",
+        subtitle="Newsletters to Kindle v0.2.0",
+    )
+    links = _nav_links(data)
+    # 2 sections in, 2 entries out — frontmatter does not inflate the count.
+    assert len(links) == 2
+    assert all("frontmatter" not in href for _text, href in links)
+
+
+def test_no_subtitle_omits_frontmatter_and_description():
+    # Back-compat: a digest built without a subtitle behaves like SAT-264 did —
+    # no frontmatter chapter, no dc:description.
+    data = build_job_epub(_sections(2), book_title="Plain")
+    opf = _opf_text(data)
+    assert "<dc:description" not in opf
+    with _zip(data) as zf:
+        assert not any(n.endswith("frontmatter.xhtml") for n in zf.namelist())
