@@ -94,6 +94,52 @@ def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch):
     assert attachment["Name"].endswith(".epub")
 
 
+def test_main_embeds_subheader_in_produced_epub(monkeypatch):
+    """End-to-end guard: the SAT-272 subheader must flow from cli.main all the
+    way through to the EPUB bytes Postmark receives — both as ``dc:description``
+    in the OPF and as the H4 line on the front-matter chapter. Without this the
+    wiring could silently regress (e.g. a missing kwarg) and the unit tests on
+    the title helper and the builder would still pass.
+    """
+    import base64
+    import zipfile
+    from io import BytesIO
+
+    from substack_kindle.job_epub import JobSection
+    from substack_kindle.service_version import service_subheader
+
+    monkeypatch.setattr(
+        "substack_kindle.cli.fetch_newsletters",
+        lambda client, **kwargs: [JobSection(title="x", markdown="# x")],
+    )
+    recorder = _RecordingHttpxPost()
+
+    rc = main(
+        argv=["--start", "2026-05-03", "--end", "2026-05-09"],
+        env=_env(),
+        build_client=lambda env: _StubGmailClient([]),
+        approved_sources=["lenny@substack.com"],
+        http_post=recorder,
+    )
+    assert rc == 0
+
+    # Decode the EPUB bytes that Postmark would have sent.
+    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["Attachments"][0]["Content"])
+    subheader = service_subheader()
+
+    with zipfile.ZipFile(BytesIO(epub_bytes)) as zf:
+        names = zf.namelist()
+        opf_name = next(n for n in names if n.endswith(".opf"))
+        opf = zf.read(opf_name).decode("utf-8", errors="replace")
+        assert "<dc:description" in opf
+        assert subheader in opf
+
+        # Front-matter chapter present and carries the H4 subtitle.
+        fm_name = next(n for n in names if n.endswith("frontmatter.xhtml"))
+        fm = zf.read(fm_name).decode("utf-8", errors="replace")
+        assert f"<h4>{subheader}</h4>" in fm
+
+
 def test_main_refuses_to_run_when_local_parts_collide():
     from substack_kindle.whitelist_check import LocalPartCollision
 
