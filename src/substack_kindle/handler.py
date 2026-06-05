@@ -30,7 +30,7 @@ from .ids import newsletter_id as _newsletter_id
 from .job_epub import JobSection, build_job_epub
 from .parsing import html_to_markdown
 from .postmark import send_epub
-from .processed_state import InMemoryProcessedStateStore
+from .processed_state import ProcessedStateStore
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def process_messages(
     kindle_email: str,
     http_post: Callable[..., Any],
     subtitle: str | None = None,
-    state: InMemoryProcessedStateStore | None = None,
+    state: ProcessedStateStore | None = None,
 ) -> HandlerResult:
     """Parse, build, and deliver a digest EPUB from pre-fetched messages.
 

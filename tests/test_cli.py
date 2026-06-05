@@ -58,7 +58,7 @@ def _env(**overrides):
     return base
 
 
-def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch):
+def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch, tmp_path):
     from substack_kindle.job_epub import JobSection
 
     sections = [
@@ -77,6 +77,7 @@ def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch):
         build_client=lambda env: _StubGmailClient([]),
         approved_sources=["lenny@substack.com", "thetokendispatch@substack.com"],
         http_post=recorder,
+        state_path=tmp_path / "state.json",
     )
 
     assert rc == 0
@@ -94,7 +95,7 @@ def test_main_wires_fetch_to_postmark_with_correct_metadata(monkeypatch):
     assert attachment["Name"].endswith(".epub")
 
 
-def test_main_embeds_subheader_in_produced_epub(monkeypatch):
+def test_main_embeds_subheader_in_produced_epub(monkeypatch, tmp_path):
     """End-to-end guard: the SAT-272 subheader must flow from cli.main all the
     way through to the EPUB bytes Postmark receives — both as ``dc:description``
     in the OPF and as the H4 line on the front-matter chapter. Without this the
@@ -120,6 +121,7 @@ def test_main_embeds_subheader_in_produced_epub(monkeypatch):
         build_client=lambda env: _StubGmailClient([]),
         approved_sources=["lenny@substack.com"],
         http_post=recorder,
+        state_path=tmp_path / "state.json",
     )
     assert rc == 0
 
@@ -206,7 +208,7 @@ def test_main_rejects_invalid_date_format():
         )
 
 
-def test_main_uses_substacks_title_format_in_attachment_name(monkeypatch):
+def test_main_uses_substacks_title_format_in_attachment_name(monkeypatch, tmp_path):
     from substack_kindle.job_epub import JobSection
 
     monkeypatch.setattr(
@@ -220,7 +222,44 @@ def test_main_uses_substacks_title_format_in_attachment_name(monkeypatch):
         build_client=lambda env: _StubGmailClient([]),
         approved_sources=["lenny@substack.com"],
         http_post=recorder,
+        state_path=tmp_path / "state.json",
     )
     # Filename embeds the date range so it's easy to spot in Postmark dashboards.
     assert "2026-05-03" in recorder.calls[0]["json"]["Attachments"][0]["Name"]
     assert "2026-05-09" in recorder.calls[0]["json"]["Attachments"][0]["Name"]
+
+
+def test_main_skips_already_delivered_on_second_run(monkeypatch, tmp_path):
+    """Running the same window twice must deliver 0 newsletters on the second run."""
+    from substack_kindle.job_epub import JobSection
+
+    sections = [JobSection(title="Lenny #1", markdown="# Lenny\n\nBody.")]
+    monkeypatch.setattr(
+        "substack_kindle.cli.fetch_newsletters",
+        lambda client, **kw: sections,
+    )
+    state_path = tmp_path / "state.json"
+
+    recorder1 = _RecordingHttpxPost()
+    rc1 = main(
+        argv=["--start", "2026-05-03", "--end", "2026-05-09"],
+        env=_env(),
+        build_client=lambda env: _StubGmailClient([]),
+        approved_sources=["lenny@substack.com"],
+        http_post=recorder1,
+        state_path=state_path,
+    )
+    assert rc1 == 0
+    assert len(recorder1.calls) == 1  # first run delivers
+
+    recorder2 = _RecordingHttpxPost()
+    rc2 = main(
+        argv=["--start", "2026-05-03", "--end", "2026-05-09"],
+        env=_env(),
+        build_client=lambda env: _StubGmailClient([]),
+        approved_sources=["lenny@substack.com"],
+        http_post=recorder2,
+        state_path=state_path,
+    )
+    assert rc2 == 0
+    assert recorder2.calls == []  # second run: already delivered → nothing sent
