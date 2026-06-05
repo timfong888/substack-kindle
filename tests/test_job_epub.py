@@ -19,6 +19,18 @@ def _zip(data: bytes) -> zipfile.ZipFile:
     return zipfile.ZipFile(BytesIO(data))
 
 
+def _section_xhtml(data: bytes, index: int = 0) -> str:
+    """Return the decoded content of section_{index}.xhtml from the EPUB zip."""
+    with _zip(data) as zf:
+        name = next(n for n in zf.namelist() if n.endswith(f"section_{index}.xhtml"))
+        return zf.read(name).decode("utf-8")
+
+
+def _nav_top_links(data: bytes):
+    """Return only top-level TOC links (no anchor fragment — newsletter-level entries)."""
+    return [(text, href) for text, href in _nav_links(data) if "#" not in href]
+
+
 class _AnchorCollector(HTMLParser):
     """Collect (text, href) for <a> tags inside the toc nav only (stdlib, no deps).
 
@@ -79,10 +91,11 @@ def _sections(n):
 
 
 def test_n_sections_produce_n_toc_entries():
+    # Top-level count must stay N regardless of sub-heading children.
     data = build_job_epub(_sections(3), book_title="My Job")
-    links = _nav_links(data)
-    assert len(links) == 3
-    assert [text for text, _ in links] == ["Newsletter 0", "Newsletter 1", "Newsletter 2"]
+    top = _nav_top_links(data)
+    assert len(top) == 3
+    assert [text for text, _ in top] == ["Newsletter 0", "Newsletter 1", "Newsletter 2"]
 
 
 def test_each_toc_entry_links_to_an_existing_section_file():
@@ -97,8 +110,7 @@ def test_each_toc_entry_links_to_an_existing_section_file():
 
 def test_single_newsletter_job_is_valid_one_entry_epub():
     data = build_job_epub(_sections(1), book_title="Solo")
-    links = _nav_links(data)
-    assert len(links) == 1
+    assert len(_nav_top_links(data)) == 1
     with _zip(data) as zf:
         names = zf.namelist()
         assert names[0] == "mimetype"
@@ -208,10 +220,10 @@ def test_subtitle_frontmatter_is_not_in_toc():
         book_title="x",
         subtitle="Newsletters to Kindle v0.2.0",
     )
-    links = _nav_links(data)
-    # 2 sections in, 2 entries out — frontmatter does not inflate the count.
-    assert len(links) == 2
-    assert all("frontmatter" not in href for _text, href in links)
+    top = _nav_top_links(data)
+    # 2 sections in, 2 top-level entries out — frontmatter does not inflate the count.
+    assert len(top) == 2
+    assert all("frontmatter" not in href for _text, href in top)
 
 
 def test_no_subtitle_omits_frontmatter_and_description():
@@ -222,3 +234,91 @@ def test_no_subtitle_omits_frontmatter_and_description():
     assert "<dc:description" not in opf
     with _zip(data) as zf:
         assert not any(n.endswith("frontmatter.xhtml") for n in zf.namelist())
+
+
+# --- SAT-281: CSS table stylesheet (Bug 1) -----------------------------------
+
+
+def test_epub_has_css_stylesheet_file():
+    """EPUB zip must contain a CSS stylesheet for table rendering."""
+    data = build_job_epub(_sections(1), book_title="Test")
+    with _zip(data) as zf:
+        assert any("newsletter.css" in n for n in zf.namelist()), (
+            "expected a newsletter.css file in the EPUB zip"
+        )
+
+
+def test_section_xhtml_references_css_stylesheet():
+    """Every section XHTML must have a <link> to the newsletter stylesheet."""
+    data = build_job_epub(_sections(2), book_title="Test")
+    for i in range(2):
+        xhtml = _section_xhtml(data, i)
+        assert "newsletter.css" in xhtml, (
+            f"section_{i}.xhtml does not reference newsletter.css"
+        )
+
+
+def test_pipe_table_markdown_renders_as_html_table_element():
+    """Pipe-table markdown must appear as <table> in the XHTML body, not plain pipe text."""
+    section = JobSection(
+        title="Stats",
+        markdown="| Metric | Value |\n|---|---|\n| Users | 1 000 |\n| Revenue | $5k |",
+    )
+    data = build_job_epub([section], book_title="Test")
+    xhtml = _section_xhtml(data)
+    assert "<table" in xhtml, "expected HTML <table> element in rendered XHTML"
+
+
+# --- SAT-281: H1 downgrade + hierarchical TOC (Bug 2) -----------------------
+
+
+def test_h1_in_markdown_body_is_downgraded_to_h2():
+    """A # H1 heading in markdown must render as <h2> in the XHTML body, never <h1>.
+
+    The newsletter title is already represented in the NCX/nav TOC entry label;
+    an <h1> inside the body duplicates it and confuses Kindle's heading navigation.
+    """
+    section = JobSection(
+        title="My Newsletter",
+        markdown="# My Newsletter\n\n## Section One\n\nContent here.",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    xhtml = _section_xhtml(data)
+    assert "<h1>" not in xhtml, "H1 must be downgraded; found <h1> in body"
+    assert "<h2" in xhtml, "expected at least one <h2> after H1 downgrade"
+
+
+def test_section_with_h2_subheadings_has_child_nav_links():
+    """A section with ## headings must produce child nav entries (the Kindle 'caret')."""
+    section = JobSection(
+        title="Token Dispatch",
+        markdown="# Token Dispatch\n\n## Markets Update\n\nContent.\n\n## Protocol News\n\nMore.",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    all_links = _nav_links(data)
+    child_texts = [text for text, href in all_links if "#" in href]
+    assert "Markets Update" in child_texts, "expected 'Markets Update' as child nav entry"
+    assert "Protocol News" in child_texts, "expected 'Protocol News' as child nav entry"
+
+
+def test_section_without_subheadings_has_flat_nav_entry():
+    """A section with no headings must produce exactly one flat TOC entry (no caret)."""
+    section = JobSection(title="Plain Post", markdown="Just a paragraph with no headings.")
+    data = build_job_epub([section], book_title="Digest")
+    all_links = _nav_links(data)
+    child_links = [href for _, href in all_links if "#" in href]
+    assert child_links == [], f"expected no child links, got {child_links}"
+
+
+def test_h1_converted_to_h2_shows_as_child_nav_entry():
+    """A # Title heading (downgraded to H2) must appear as a child nav entry, not top-level."""
+    section = JobSection(
+        title="Newsletter 0",
+        markdown="# Newsletter 0\n\nBody text.",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    all_links = _nav_links(data)
+    top = [text for text, href in all_links if "#" not in href]
+    children = [text for text, href in all_links if "#" in href]
+    assert top == ["Newsletter 0"], f"expected one top-level entry, got {top}"
+    assert "Newsletter 0" in children, "downgraded H1 must appear as child nav entry"
