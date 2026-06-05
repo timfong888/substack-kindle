@@ -32,6 +32,7 @@ from .digest_title import format_digest_title
 from .fetch import fetch_newsletters
 from .job_epub import JobSection, build_job_epub
 from .pipeline import ON_DEMAND, run_job
+from .processed_state import JsonFileProcessedStateStore
 from .service_version import service_subheader
 from .whitelist_check import ensure_distinct_local_parts
 
@@ -39,6 +40,7 @@ POSTMARK_URL = "https://api.postmarkapp.com/email"
 REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
 DEFAULT_APPROVED_SOURCES_PATH = "~/.config/substack-kindle/approved_sources.json"
 DEFAULT_GMAIL_BUNDLE_PATH = "~/.config/substack-kindle/gmail/"
+DEFAULT_STATE_PATH = Path("~/.config/substack-kindle/state.json")
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,7 @@ def main(
     build_client: Callable[[Mapping[str, str]], object] | None = None,
     approved_sources: list[str] | None = None,
     http_post: Callable[..., object] | None = None,
+    state_path: Path | None = None,
 ) -> int:
     """Run one end-to-end job. Injectable seams keep this testable without OAuth."""
     args = _parse_args(argv)
@@ -153,17 +156,23 @@ def main(
             client, approved_sources=sources, window_start=s, window_end=e
         )
 
+    store = JsonFileProcessedStateStore(
+        (state_path or DEFAULT_STATE_PATH).expanduser()
+    )
+
     def _dedup(items):
-        # Within-batch title-based dedup; persistent dedup arrives with the
-        # processed-state store wiring (SAT-239) on a follow-up ticket.
         seen: set[str] = set()
         out: list[JobSection] = []
         for item in items:
-            if item.title in seen:
+            if item.title in seen or store.is_delivered(item.title):
                 continue
             seen.add(item.title)
             out.append(item)
         return out
+
+    def _record(result) -> None:
+        for nid in result.delivered_newsletter_ids:
+            store.mark_delivered(nid)
 
     def _build_epub(items):
         title = format_digest_title(start_dt.date(), end_dt.date())
@@ -191,6 +200,7 @@ def main(
         dedup=_dedup,
         build_epub=_build_epub,
         send=_send,
+        record=_record,
         id_of=lambda section: section.title,
     )
 
