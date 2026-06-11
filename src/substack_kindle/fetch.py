@@ -32,6 +32,7 @@ class GmailFetchError(Exception):
 @dataclass(frozen=True)
 class MessageHeaders:
     from_address: str
+    sender_name: str  # human-readable display name from the From header
     subject: str
     date: datetime
 
@@ -50,6 +51,20 @@ def _header_value(payload: dict, name: str) -> str:
     return ""
 
 
+def _sender_display_name(raw_from: str) -> str:
+    """Return a human-readable publication name from a raw From header value.
+
+    Prefers the display name (e.g. ``ByteByteGo`` from
+    ``ByteByteGo <alex@bytebytego.com>``).  Falls back to the local part of
+    the email address, title-cased (``lenny@substack.com`` → ``Lenny``).
+    """
+    name, address = parseaddr(raw_from)
+    if name:
+        return name
+    local = address.split("@")[0].split("+")[0]
+    return local.replace("-", " ").replace("_", " ").title()
+
+
 def extract_headers(message: dict) -> MessageHeaders:
     """Return the parsed From / Subject / Date headers."""
     payload = message.get("payload") or {}
@@ -65,7 +80,12 @@ def extract_headers(message: dict) -> MessageHeaders:
         # RFC 5322 dates without a TZ are extremely rare; treat as UTC so
         # downstream window comparisons keep working.
         date = date.replace(tzinfo=UTC)
-    return MessageHeaders(from_address=address.lower(), subject=subject, date=date)
+    return MessageHeaders(
+        from_address=address.lower(),
+        sender_name=_sender_display_name(raw_from),
+        subject=subject,
+        date=date,
+    )
 
 
 def _decode_b64url(data: str) -> str:
@@ -156,7 +176,11 @@ def fetch_newsletters(
         body_html = extract_body_html(message)
         markdown = html_to_markdown(body_html)
         enriched.append(
-            (headers.date, JobSection(title=headers.subject, markdown=markdown))
+            (headers.date, JobSection(
+                title=headers.subject,
+                markdown=markdown,
+                sender=headers.sender_name,
+            ))
         )
     enriched.sort(key=lambda pair: pair[0])
     return [section for _, section in enriched]

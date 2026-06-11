@@ -101,3 +101,130 @@ def test_cost_is_independent_of_length_no_model_calls():
     assert len(md_big) > len(md_small)
     # No LLM SDK loaded regardless of input size.
     assert "anthropic" not in sys.modules and "openai" not in sys.modules
+
+
+# ---------------------------------------------------------------------------
+# Table handling (SAT-57 / issue #57)
+# ---------------------------------------------------------------------------
+
+def test_data_table_preserved_as_raw_html():
+    # A table with <th> is a data table — it must survive as an HTML block so
+    # Kindle can render it with the existing CSS stylesheet.
+    html = (
+        "<p>Intro.</p>"
+        "<table><thead><tr><th>Plan</th><th>Price</th></tr></thead>"
+        "<tbody><tr><td>Pro</td><td>$10</td></tr></tbody></table>"
+        "<p>Outro.</p>"
+    )
+    md = html_to_markdown(html)
+    assert "<table>" in md
+    assert "<th>Plan</th>" in md
+    assert "<td>Pro</td>" in md
+    # Must NOT produce pipe-table syntax (which loses content on round-trip).
+    assert "|" not in md.split("<table>")[0]
+
+
+def test_layout_table_flattened_to_prose():
+    # A table with only <td> (no <th>) is a layout wrapper — its cell text must
+    # appear as readable prose; no HTML table or pipe-table must remain.
+    html = (
+        "<table><tr>"
+        "<td><p>Left column content.</p></td>"
+        "<td><p>Right column content.</p></td>"
+        "</tr></table>"
+    )
+    md = html_to_markdown(html)
+    assert "Left column content." in md
+    assert "Right column content." in md
+    assert "<table>" not in md
+    # No pipe-table lines (markdownify's broken table output).
+    assert not any(line.startswith("|") for line in md.splitlines())
+
+
+def test_layout_table_with_empty_cells_removed_cleanly():
+    # &nbsp;-only cells produce no visible content — the table should disappear
+    # entirely rather than leaving behind blank lines or empty tags.
+    html = "<p>Before.</p><table><tr><td>\xa0</td><td>\xa0</td></tr></table><p>After.</p>"
+    md = html_to_markdown(html)
+    assert "Before." in md
+    assert "After." in md
+    assert "<table>" not in md
+    assert not any(line.startswith("|") for line in md.splitlines())
+
+
+def test_data_table_nested_in_layout_wrapper_preserved():
+    # Real newsletters wrap a data table inside an outer layout <table>.
+    # The inner data table must be saved; the outer layout wrapper flattened.
+    html = (
+        "<table>"  # outer layout — no <th>
+        "<tr><td>"
+        "<table>"  # inner data table — has <th>
+        "<tr><th>Metric</th><th>Value</th></tr>"
+        "<tr><td>Revenue</td><td>$1M</td></tr>"
+        "</table>"
+        "</td></tr>"
+        "</table>"
+    )
+    md = html_to_markdown(html)
+    assert "<table>" in md
+    assert "<th>Metric</th>" in md
+    assert "Revenue" in md
+    # The outer layout wrapper must not produce a pipe table.
+    assert not any(line.startswith("|") for line in md.splitlines())
+
+
+def test_multiple_data_tables_all_preserved():
+    html = (
+        "<table><tr><th>A</th></tr><tr><td>1</td></tr></table>"
+        "<p>Gap.</p>"
+        "<table><tr><th>B</th></tr><tr><td>2</td></tr></table>"
+    )
+    md = html_to_markdown(html)
+    assert md.count("<table>") == 2
+    assert "<th>A</th>" in md
+    assert "<th>B</th>" in md
+
+
+def test_layout_table_preserves_heading_structure():
+    # Cells containing semantic headings must produce Markdown headings, not
+    # flat text.  This was the root cause of the unreadable Kindle output: the
+    # old get_text() path stripped <h2> tags and collapsed everything into one
+    # paragraph.
+    html = (
+        "<table><tr><td>"
+        "<h2>Section Title</h2>"
+        "<p>Body text.</p>"
+        "</td></tr></table>"
+    )
+    md = html_to_markdown(html)
+    assert "## Section Title" in md
+    assert "Body text." in md
+    assert "<table>" not in md
+
+
+def test_layout_table_preserves_inline_formatting():
+    # Bold, italic, and links inside layout-table cells must survive the
+    # unwrap so the reader sees formatted prose, not stripped plain text.
+    html = (
+        "<table><tr><td>"
+        "<p>Normal and <strong>bold</strong> text.</p>"
+        "</td></tr></table>"
+    )
+    md = html_to_markdown(html)
+    assert "**bold**" in md
+    assert "<table>" not in md
+
+
+def test_prose_survives_alongside_data_table():
+    # Content before and after the table must not be lost.
+    html = (
+        "<h2>Section</h2>"
+        "<p>Here is the data:</p>"
+        "<table><tr><th>Col</th></tr><tr><td>Val</td></tr></table>"
+        "<p>End of section.</p>"
+    )
+    md = html_to_markdown(html)
+    assert "## Section" in md
+    assert "Here is the data:" in md
+    assert "<table>" in md
+    assert "End of section." in md
