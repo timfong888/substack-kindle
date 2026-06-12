@@ -123,10 +123,11 @@ def test_accepts_arbitrary_id_strings(nid):
 # SAT-284: JsonFileProcessedStateStore
 # ---------------------------------------------------------------------------
 
-from pathlib import Path  # noqa: E402 (after existing imports for grouping clarity)
-import threading
+import threading  # noqa: E402 (grouped under the section header above)
 
-from substack_kindle.processed_state import JsonFileProcessedStateStore
+from substack_kindle.processed_state import (  # noqa: E402
+    JsonFileProcessedStateStore,
+)
 
 
 def test_json_file_store_returns_not_delivered_when_file_absent(tmp_path):
@@ -212,8 +213,10 @@ def test_json_file_store_concurrent_writes_do_not_corrupt(tmp_path):
 
     t1 = threading.Thread(target=write_batch, args=(0,))
     t2 = threading.Thread(target=write_batch, args=(20,))
-    t1.start(); t2.start()
-    t1.join(); t2.join()
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
 
     assert errors == [], f"exceptions during concurrent writes: {errors}"
     data = json.loads(path.read_text())

@@ -79,7 +79,10 @@ def _default_window() -> tuple[str, str]:
 
 @pytest.mark.skipif(
     os.environ.get("RUN_LIVE_E2E") != "1",
-    reason="live account e2e is opt-in; set RUN_LIVE_E2E=1 to run (reads Gmail, sends a real email)",
+    reason=(
+        "live account e2e is opt-in; set RUN_LIVE_E2E=1 to run "
+        "(reads Gmail, sends a real email)"
+    ),
 )
 def test_live_account_delivers_digest_to_kindle(tmp_path, capsys):
     """Real Gmail → EPUB → Postmark send to the configured Kindle address."""

@@ -8,7 +8,7 @@ keyed by newsletter ID and retrievable at any later time.
 
 from __future__ import annotations
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from markdownify import markdownify as _markdownify
 
 from .substack_clean import clean_substack, looks_like_substack

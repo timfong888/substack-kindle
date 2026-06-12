@@ -4,7 +4,7 @@ Run the Newsletter-to-Kindle pipeline for a date window and report results.
 
 ## Usage
 
-```
+```text
 /deliver                          # yesterday → today (default)
 /deliver 2026-06-09               # single day
 /deliver 2026-06-08 2026-06-10    # explicit range
@@ -20,7 +20,7 @@ Run the Newsletter-to-Kindle pipeline for a date window and report results.
 
 2. Run the pipeline:
 ```bash
-cd /Users/tfong/development/substack-kindle
+cd <project-root>   # the repository root where you cloned substack-kindle
 set -a && source .env && set +a
 uv run substack-kindle --start <START> --end <END>
 ```
