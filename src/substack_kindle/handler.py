@@ -10,7 +10,9 @@ Usage:
     from substack_kindle.handler import InboundMessage, process_messages
 
     result = process_messages(
-        messages=[InboundMessage(sender=..., subject=..., date_sent=..., html_body=..., message_id=...)],
+        messages=[
+            InboundMessage(sender=..., subject=..., date_sent=..., html_body=..., message_id=...)
+        ],
         book_title="Newsletter Digest: June 5 2026",
         postmark_server_token=os.environ["POSTMARK_SERVER_TOKEN"],
         whitelist_email=os.environ["WHITELIST_EMAIL"],

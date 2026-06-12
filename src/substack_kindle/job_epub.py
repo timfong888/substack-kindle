@@ -26,11 +26,15 @@ class JobSection:
 
     title: str
     markdown: str
+    sender: str = ""  # human-readable publication name; empty → title-only TOC label
 
 
 # CSS injected into every section so data tables render on Kindle.
 # Kindle supports basic CSS; border-collapse + padding is enough for readability.
+# p margin-bottom ensures visual paragraph separation — without it Kindle uses
+# first-line-indent only which makes long essays read as a continuous block.
 _NEWSLETTER_CSS = (
+    b"p{margin-top:0;margin-bottom:0.6em}"
     b"table{border-collapse:collapse;width:100%;margin:1em 0}"
     b"th,td{border:1px solid #ccc;padding:.4em .6em;text-align:left;vertical-align:top}"
     b"th{background-color:#f2f2f2;font-weight:bold}"
@@ -172,8 +176,9 @@ def build_job_epub(
         raw_html = _markdown.markdown(section.markdown, extensions=["extra"])
         processed_html, sub_headings = _post_process_html(raw_html)
 
+        toc_title = f"{section.sender} — {section.title}" if section.sender else section.title
         chapter = epub.EpubHtml(
-            title=section.title, file_name=f"section_{index}.xhtml", lang="en"
+            title=toc_title, file_name=f"section_{index}.xhtml", lang="en"
         )
         chapter.content = _chapter_xhtml(section.title, processed_html)
         chapter.add_link(href=_CSS_FILE, rel="stylesheet", type="text/css")

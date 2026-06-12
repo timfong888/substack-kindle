@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import base64
 import zipfile
-from collections.abc import Callable
 from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
 
-from substack_kindle.handler import HandlerResult, InboundMessage, process_messages
+from substack_kindle.handler import InboundMessage, process_messages
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -110,7 +109,9 @@ class _FailingPost:
         return self._Resp()
 
 
-def _msg(html: str, sender: str = "news@example.com", subject: str = "Weekly News") -> InboundMessage:
+def _msg(
+    html: str, sender: str = "news@example.com", subject: str = "Weekly News"
+) -> InboundMessage:
     return InboundMessage(
         sender=sender,
         subject=subject,
@@ -286,8 +287,8 @@ def test_postmark_4xx_raises_and_result_is_not_ok():
 
 def test_already_delivered_message_is_skipped_by_state_store():
     """If the state store marks a newsletter as delivered, it must not be re-sent."""
-    from substack_kindle.processed_state import InMemoryProcessedStateStore
     from substack_kindle.ids import newsletter_id
+    from substack_kindle.processed_state import InMemoryProcessedStateStore
 
     msg = _msg(_PLAIN_HTML, sender="lenny@substack.com", subject="Lenny #213")
     nid = newsletter_id(msg.sender, msg.date_sent.isoformat(), msg.subject)
@@ -303,9 +304,8 @@ def test_already_delivered_message_is_skipped_by_state_store():
 
 def test_state_store_is_updated_after_successful_delivery():
     """After a successful delivery the newsletter IDs are marked delivered in the state store."""
-    from substack_kindle.processed_state import InMemoryProcessedStateStore
     from substack_kindle.ids import newsletter_id
-    from substack_kindle.processed_state import ProcessedState
+    from substack_kindle.processed_state import InMemoryProcessedStateStore, ProcessedState
 
     msg = _msg(_PLAIN_HTML, sender="lenny@substack.com", subject="Lenny #213")
     nid = newsletter_id(msg.sender, msg.date_sent.isoformat(), msg.subject)

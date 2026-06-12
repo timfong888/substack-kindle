@@ -87,6 +87,28 @@ def test_extract_headers_picks_from_subject_and_date():
     assert headers.date == datetime(2026, 5, 9, 12, 0, 0, tzinfo=UTC)
 
 
+def test_extract_headers_sender_name_uses_display_name():
+    headers = extract_headers(_msg(
+        "m1", frm="ByteByteGo <alex@bytebytego.com>", subject="x", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == "ByteByteGo"
+
+
+def test_extract_headers_sender_name_fallback_when_no_display_name():
+    # No display name → derive from local part of email address.
+    headers = extract_headers(_msg(
+        "m1", frm="lenny@substack.com", subject="x", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == "Lenny"
+
+
+def test_extract_headers_sender_name_strips_plus_tag():
+    headers = extract_headers(_msg(
+        "m1", frm="newsletter+promo@example.com", subject="x", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == "Newsletter"
+
+
 def test_extract_headers_handles_bare_from_with_no_display_name():
     headers = extract_headers(_msg(
         "m1", frm="lenny@substack.com", subject="Hi", date=_DATE, body_html="x",
@@ -137,6 +159,27 @@ def test_extract_body_html_raises_when_message_has_no_body():
 
 
 # --- End-to-end fetch with stub client --------------------------------------
+
+
+def test_fetch_newsletters_sections_carry_sender_name():
+    # The sender display name from the From header must flow into JobSection.sender.
+    msgs = {
+        "m1": _msg(
+            "m1",
+            frm="The Token Dispatch <thetokendispatch@substack.com>",
+            subject="Weekly",
+            date="Mon, 4 May 2026 09:00:00 +0000",
+            body_html="<p>Body</p>",
+        ),
+    }
+    client = _StubClient(ids=["m1"], messages=msgs)
+    sections = fetch_newsletters(
+        client,
+        approved_sources=["thetokendispatch@substack.com"],
+        window_start=datetime(2026, 5, 3, tzinfo=UTC),
+        window_end=datetime(2026, 5, 9, 23, 59, 59, tzinfo=UTC),
+    )
+    assert sections[0].sender == "The Token Dispatch"
 
 
 def test_fetch_newsletters_returns_sections_in_window_order():

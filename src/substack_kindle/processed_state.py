@@ -21,8 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, runtime_checkable
-from typing import Protocol
+from typing import Any, Protocol, runtime_checkable
 
 
 class ProcessedState(enum.Enum):

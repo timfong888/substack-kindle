@@ -310,6 +310,44 @@ def test_section_without_subheadings_has_flat_nav_entry():
     assert child_links == [], f"expected no child links, got {child_links}"
 
 
+# --- SAT-288: TOC sender prefix ---------------------------------------------------
+
+
+def test_toc_includes_sender_prefix_when_sender_is_set():
+    """TOC label must be 'Sender — Title' when sender is populated."""
+    section = JobSection(
+        title="Weekly Roundup",
+        markdown="# Weekly Roundup\n\nBody.",
+        sender="ByteByteGo",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    top = _nav_top_links(data)
+    assert top[0][0] == "ByteByteGo — Weekly Roundup"
+
+
+def test_toc_falls_back_to_title_only_when_sender_is_empty():
+    """TOC label must be the bare title when sender is empty (default)."""
+    section = JobSection(title="Solo Post", markdown="Body.")
+    data = build_job_epub([section], book_title="Digest")
+    top = _nav_top_links(data)
+    assert top[0][0] == "Solo Post"
+
+
+def test_sender_prefix_does_not_leak_into_body_content():
+    """The sender prefix must appear only in the TOC label, not in the rendered body paragraphs."""
+    import re
+
+    section = JobSection(
+        title="The Article",
+        markdown="# The Article\n\nBody paragraph.",
+        sender="Mission Local",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    xhtml = _section_xhtml(data)
+    body = re.search(r"<body>(.*?)</body>", xhtml, re.DOTALL).group(1)
+    assert "Mission Local" not in body
+
+
 def test_h1_converted_to_h2_shows_as_child_nav_entry():
     """A # Title heading (downgraded to H2) must appear as a child nav entry, not top-level."""
     section = JobSection(
