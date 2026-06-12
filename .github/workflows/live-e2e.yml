@@ -8,11 +8,11 @@
 #   POSTMARK_SERVER_TOKEN      Postmark server token
 #   WHITELIST_EMAIL            verified Postmark sender (distinct local-part)
 #   KINDLE_EMAIL               Kindle delivery address
-#   GMAIL_CLIENT_SECRET_JSON   full contents of the OAuth client_secret.json
-#   GMAIL_CREDENTIALS_JSON     full contents of the cached credentials.json
+#   GMAIL_CLIENT_SECRET        full contents of the OAuth client_secret.json
+#   GMAIL_CREDENTIALS          full contents of the cached credentials.json
 #                              (must hold a valid refresh_token — CI cannot do
 #                              the interactive OAuth flow)
-#   APPROVED_SOURCES_JSON      full contents of approved_sources.json
+#   APPROVED_SOURCES           full contents of approved_sources.json
 #
 # Credential files are materialized under $RUNNER_TEMP (ephemeral, never the
 # workspace) so nothing secret is committed or uploaded.
@@ -52,14 +52,14 @@ jobs:
 
       - name: Materialize credential files
         env:
-          GMAIL_CLIENT_SECRET_JSON: ${{ secrets.GMAIL_CLIENT_SECRET_JSON }}
-          GMAIL_CREDENTIALS_JSON: ${{ secrets.GMAIL_CREDENTIALS_JSON }}
-          APPROVED_SOURCES_JSON: ${{ secrets.APPROVED_SOURCES_JSON }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
+          APPROVED_SOURCES: ${{ secrets.APPROVED_SOURCES }}
         run: |
           mkdir -p "$RUNNER_TEMP/gmail"
-          printf '%s' "$GMAIL_CLIENT_SECRET_JSON" > "$RUNNER_TEMP/gmail/client_secret.json"
-          printf '%s' "$GMAIL_CREDENTIALS_JSON" > "$RUNNER_TEMP/gmail/credentials.json"
-          printf '%s' "$APPROVED_SOURCES_JSON" > "$RUNNER_TEMP/approved_sources.json"
+          printf '%s' "$GMAIL_CLIENT_SECRET" > "$RUNNER_TEMP/gmail/client_secret.json"
+          printf '%s' "$GMAIL_CREDENTIALS" > "$RUNNER_TEMP/gmail/credentials.json"
+          printf '%s' "$APPROVED_SOURCES" > "$RUNNER_TEMP/approved_sources.json"
 
       - name: Live e2e (real Gmail read + real Postmark send to Kindle)
         env:
