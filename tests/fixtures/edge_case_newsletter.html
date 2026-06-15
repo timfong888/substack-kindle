@@ -1,0 +1,54 @@
+<!--
+  Acceptance fixture — one newsletter that bundles every known rendering edge
+  case. Each CASE block is a regression guard; the invariants asserted against
+  the delivered EPUB live in tests/test_acceptance_edge_cases.py.
+
+  CONTENT_* markers are unique so assertions can target the survival of each
+  case's real text. When a new rendering bug is found, add a CASE here and an
+  invariant/marker assertion in the test — that is how we keep from regressing.
+-->
+<html><body>
+
+  <!-- Substack chrome: tracking pixel triggers the SAT-265 cleaner -->
+  <img src="https://eotrx.substackcdn.com/o/abc/p.gif?token=xyz" />
+  &#8203;&#8204;&#65279;  <!-- zero-width / preview-pane padding chars -->
+
+  <h1>CONTENT_TITLE — Markets Weekly</h1>
+
+  <!-- CASE 1: ordinary prose must survive untouched -->
+  <p>CONTENT_PROSE Bitcoin reached a new high this week.</p>
+
+  <!-- CASE 2: layout table (no <th>) -> flattened to readable prose -->
+  <table><tr>
+    <td><h2>CONTENT_LAYOUT_HEADING DeFi Roundup</h2><p>CONTENT_LAYOUT_LEFT Uniswap v4 launched.</p></td>
+    <td><p>CONTENT_LAYOUT_RIGHT Staking rewards dropped to 3.2%.</p></td>
+  </tr></table>
+
+  <!-- CASE 3 (GH #57): <th> present but cells are empty / whitespace / image-only.
+       Must NOT survive as an empty table; the prose after it must remain. -->
+  <table>
+    <tr><th></th><th></th></tr>
+    <tr><td>&nbsp;</td><td><img src="spacer.png"></td></tr>
+  </table>
+  <p>CONTENT_AFTER_EMPTY_TABLE Article continues after the layout spacer.</p>
+
+  <!-- CASE 4: genuine data table -> preserved as a real table with content -->
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>CONTENT_DATA_CELL Active users</td><td>1024</td></tr>
+    <tr><td>Revenue</td><td>$4800</td></tr>
+  </table>
+
+  <!-- CASE 5: data table nested inside a layout wrapper -->
+  <table><tr><td>
+    <table>
+      <tr><th>Coin</th><th>Price</th></tr>
+      <tr><td>CONTENT_NESTED_CELL BTC</td><td>$100k</td></tr>
+    </table>
+  </td></tr></table>
+
+  <!-- Substack chrome: forwarded banner + read-in-app link must be stripped -->
+  <table><tr><td>Forwarded this email? <a href="https://substack.com/subscribe">Subscribe here</a> for more.</td></tr></table>
+  <p><a href="https://substack.com/app-link/post?x=1">Read in app</a></p>
+
+</body></html>
