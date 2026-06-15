@@ -152,6 +152,25 @@ def test_layout_table_with_empty_cells_removed_cleanly():
     assert not any(line.startswith("|") for line in md.splitlines())
 
 
+def test_th_table_with_empty_cells_treated_as_layout():
+    # GH #57: email layout templates ([AINews], DeFi Daily) wrap content in
+    # tables that contain <th> but whose data cells are empty / whitespace /
+    # image-only. The <th> presence alone must NOT mark them as data tables —
+    # preserving them as raw HTML renders an empty table on Kindle. They must be
+    # flattened/dropped like any other layout table, and surrounding prose kept.
+    html = (
+        "<table>"
+        "<tr><th></th><th></th></tr>"
+        "<tr><td>\xa0</td><td><img src='spacer.png'></td></tr>"
+        "</table>"
+        "<p>Real article text.</p>"
+    )
+    md = html_to_markdown(html)
+    assert "Real article text." in md
+    assert "<table>" not in md
+    assert not any(line.startswith("|") for line in md.splitlines())
+
+
 def test_data_table_nested_in_layout_wrapper_preserved():
     # Real newsletters wrap a data table inside an outer layout <table>.
     # The inner data table must be saved; the outer layout wrapper flattened.

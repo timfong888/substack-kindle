@@ -58,7 +58,13 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
         if table.parent is None:
             continue
 
-        if table.find("th") is not None:
+        # A genuine data table needs both a non-empty header cell AND a non-empty
+        # data cell. A <th> alone is not enough: email layout templates (GH #57)
+        # use <th>-bearing tables whose cells are empty / whitespace / image-only,
+        # and preserving those as raw HTML renders an empty table on Kindle.
+        has_header = any(th.get_text(strip=True) for th in table.find_all("th"))
+        has_data = any(td.get_text(strip=True) for td in table.find_all("td"))
+        if has_header and has_data:
             # Data table: save and replace with a sentinel paragraph.
             key = _sentinel(counter)
             counter += 1
