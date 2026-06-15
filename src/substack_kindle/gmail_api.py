@@ -9,7 +9,7 @@ The OAuth bundle layout matches the standalone tool's convention to ease
 migration:
 
     {bundle_dir}/
-        client_secret.json   # downloaded OAuth client (committed read-only secret)
+        client_secret.json   # downloaded OAuth client (gitignored — never commit)
         credentials.json     # cached user token; refreshed in place
 
 Only the read-only Gmail scope is requested (Req 1, SAT-241). The
