@@ -1,8 +1,12 @@
-"""Production end-to-end CLI: Gmail → EPUB → Postmark (SAT-269).
+"""Production end-to-end CLI: RSS → EPUB → Postmark (SAT-330).
 
 Wires the existing modules into a single per-run command:
 
-    uv run substack-kindle --start 2026-05-03 --end 2026-05-09
+    uv run substack-kindle --start 2026-06-14 --end 2026-06-24
+
+Ingestion is via each free Substack's canonical RSS feed (SAT-330) — there is no
+Gmail/OAuth dependency on this path. Approved sources are full RSS feed URLs read
+from a feed registry (``feeds.json``).
 
 Required env (matching ``runner.load_runtime_config`` plus a kindle target):
 
@@ -12,10 +16,9 @@ Required env (matching ``runner.load_runtime_config`` plus a kindle target):
                        # Amazon's verification trap (SAT-270 research).
     KINDLE_EMAIL
 
-The collaborators (Gmail client builder, approved-sources list, HTTP transport)
-are injected into ``main`` so the entire flow is testable without OAuth or live
-network. The production wiring picks the real implementations when the args
-are omitted.
+The collaborators (RSS HTTP getter, feed-URL list, HTTP transport) are injected
+into ``main`` so the entire flow is testable without live network. The production
+wiring picks the real implementations when the args are omitted.
 """
 
 from __future__ import annotations
@@ -29,17 +32,16 @@ from pathlib import Path
 
 from . import postmark, postmark_transport
 from .digest_title import format_digest_title
-from .fetch import fetch_newsletters
-from .job_epub import JobSection, build_job_epub
+from .job_epub import build_job_epub
 from .pipeline import ON_DEMAND, run_job
 from .processed_state import JsonFileProcessedStateStore
+from .rss_fetch import fetch_posts
 from .service_version import service_subheader
 from .whitelist_check import ensure_distinct_local_parts
 
 POSTMARK_URL = "https://api.postmarkapp.com/email"
 REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
-DEFAULT_APPROVED_SOURCES_PATH = "~/.config/substack-kindle/approved_sources.json"
-DEFAULT_GMAIL_BUNDLE_PATH = "~/.config/substack-kindle/gmail/"
+DEFAULT_FEEDS_PATH = "~/.config/substack-kindle/feeds.json"
 DEFAULT_STATE_PATH = Path("~/.config/substack-kindle/state.json")
 
 
@@ -48,16 +50,14 @@ class CliConfig:
     postmark_server_token: str
     whitelist_email: str
     kindle_email: str
-    approved_sources_path: Path
-    gmail_bundle_path: Path
+    feeds_path: Path
 
     def __repr__(self) -> str:
         return (
             "CliConfig(postmark_server_token='***redacted***', "
             f"whitelist_email={self.whitelist_email!r}, "
             f"kindle_email={self.kindle_email!r}, "
-            f"approved_sources_path={self.approved_sources_path}, "
-            f"gmail_bundle_path={self.gmail_bundle_path})"
+            f"feeds_path={self.feeds_path})"
         )
 
 
@@ -69,12 +69,7 @@ def _load_config(env: Mapping[str, str]) -> CliConfig:
         postmark_server_token=env["POSTMARK_SERVER_TOKEN"],
         whitelist_email=env["WHITELIST_EMAIL"],
         kindle_email=env["KINDLE_EMAIL"],
-        approved_sources_path=Path(
-            env.get("APPROVED_SOURCES_PATH") or DEFAULT_APPROVED_SOURCES_PATH
-        ).expanduser(),
-        gmail_bundle_path=Path(
-            env.get("GMAIL_BUNDLE_PATH") or DEFAULT_GMAIL_BUNDLE_PATH
-        ).expanduser(),
+        feeds_path=Path(env.get("FEEDS_PATH") or DEFAULT_FEEDS_PATH).expanduser(),
     )
 
 
@@ -95,8 +90,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--end", type=_parse_iso_date, required=True,
                         help="Window end date (inclusive), YYYY-MM-DD.")
     args = parser.parse_args(argv)
-    # Fail fast on an inverted window so we don't issue a Gmail query that
-    # cannot match anything and quietly succeed with an empty digest.
+    # Fail fast on an inverted window so we don't issue a query that cannot match
+    # anything and quietly succeed with an empty digest.
     if args.start > args.end:
         parser.error("--start must be on or before --end")
     return args
@@ -106,30 +101,31 @@ def _end_of_day(d: datetime) -> datetime:
     return datetime.combine(d.date(), time.max, tzinfo=d.tzinfo)
 
 
-def _build_gmail_client_default(env: Mapping[str, str]):
-    # Lazy import so non-network callers (tests, dry-runs) do not require google-api-python-client.
-    from .gmail_api import build_gmail_client
+def _http_get_default(url: str) -> bytes:
+    # Lazy import so non-network callers (tests, dry-runs) never need httpx.
+    import httpx
 
-    bundle = env.get("GMAIL_BUNDLE_PATH") or DEFAULT_GMAIL_BUNDLE_PATH
-    return build_gmail_client(Path(bundle).expanduser())
+    resp = httpx.get(url, timeout=30.0, follow_redirects=True)
+    resp.raise_for_status()
+    return resp.content
 
 
-def _load_approved_sources_default(path: Path) -> list[str]:
+def _load_feeds_default(path: Path) -> list[str]:
     import json
 
-    return json.loads(path.read_text())["senders"]
+    return json.loads(path.read_text())["feeds"]
 
 
 def main(
     argv: list[str] | None = None,
     *,
     env: Mapping[str, str] | None = None,
-    build_client: Callable[[Mapping[str, str]], object] | None = None,
-    approved_sources: list[str] | None = None,
+    feeds: list[str] | None = None,
+    http_get: Callable[[str], bytes | str] | None = None,
     http_post: Callable[..., object] | None = None,
     state_path: Path | None = None,
 ) -> int:
-    """Run one end-to-end job. Injectable seams keep this testable without OAuth."""
+    """Run one end-to-end job. Injectable seams keep this testable without network."""
     args = _parse_args(argv)
     env = env if env is not None else os.environ
     config = _load_config(env)
@@ -140,11 +136,8 @@ def main(
         kindle_email=config.kindle_email,
     )
 
-    build_client = build_client or _build_gmail_client_default
-    client = build_client(env)
-    sources = approved_sources if approved_sources is not None else _load_approved_sources_default(
-        config.approved_sources_path
-    )
+    http_get = http_get or _http_get_default
+    feed_urls = feeds if feeds is not None else _load_feeds_default(config.feeds_path)
 
     start_dt = args.start
     end_dt = _end_of_day(args.end)
@@ -152,9 +145,7 @@ def main(
     attachment_name = f"digest-{range_label}.epub"
 
     def _collect(s, e):
-        return fetch_newsletters(
-            client, approved_sources=sources, window_start=s, window_end=e
-        )
+        return fetch_posts(http_get, feed_urls=feed_urls, window_start=s, window_end=e)
 
     store = JsonFileProcessedStateStore(
         (state_path or DEFAULT_STATE_PATH).expanduser()
@@ -162,12 +153,12 @@ def main(
 
     def _dedup(items):
         seen: set[str] = set()
-        out: list[JobSection] = []
-        for item in items:
-            if item.title in seen or store.is_delivered(item.title):
+        out = []
+        for post in items:
+            if post.guid in seen or store.is_delivered(post.guid):
                 continue
-            seen.add(item.title)
-            out.append(item)
+            seen.add(post.guid)
+            out.append(post)
         return out
 
     def _record(result) -> None:
@@ -177,7 +168,9 @@ def main(
     def _build_epub(items):
         title = format_digest_title(start_dt.date(), end_dt.date())
         return build_job_epub(
-            list(items), book_title=title, subtitle=service_subheader()
+            [post.to_section() for post in items],
+            book_title=title,
+            subtitle=service_subheader(),
         )
 
     def _send(epub_bytes):
@@ -201,7 +194,7 @@ def main(
         build_epub=_build_epub,
         send=_send,
         record=_record,
-        id_of=lambda section: section.title,
+        id_of=lambda post: post.guid,
     )
 
     print(
