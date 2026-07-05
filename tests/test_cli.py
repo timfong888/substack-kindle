@@ -354,12 +354,20 @@ class TestValidateFeedUrl:
             _validate_feed_url("https://internal.example.com/feed")
 
     def test_rejects_substack_lookalike_host(self):
-        # A userinfo/lookalike host must not slip past a naive "contains
+        # A subdomain lookalike must not slip past a naive "contains
         # substack.com" check.
         from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
 
         with pytest.raises(InvalidFeedUrlError):
             _validate_feed_url("https://substack.com.evil.example/feed")
+
+    def test_rejects_userinfo_lookalike_host(self):
+        # "user@host" syntax: the part before '@' must not be mistaken for
+        # the actual host.
+        from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
+
+        with pytest.raises(InvalidFeedUrlError):
+            _validate_feed_url("https://substack.com@evil.example/feed")
 
     def test_rejects_non_feed_path(self):
         from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
