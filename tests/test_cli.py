@@ -264,6 +264,46 @@ def test_main_dedups_on_guid_across_runs(monkeypatch, tmp_path):
     assert recorder2.calls == []  # second run: same guid already delivered → nothing sent
 
 
+def test_main_dedups_duplicate_guid_within_single_run(monkeypatch, tmp_path):
+    """Two posts sharing a guid *within one fetch result* must collapse to one
+    delivered post via the in-memory `seen` guard in cli._dedup — this is
+    distinct from (and previously untested next to) cross-run dedup via
+    state.json, covered above by test_main_dedups_on_guid_across_runs."""
+    import base64
+    import zipfile
+    from io import BytesIO
+
+    posts = [
+        _post("dup-guid", "First Copy", "# First\n\nBody one."),
+        _post("dup-guid", "Second Copy", "# Second\n\nBody two."),
+    ]
+    monkeypatch.setattr(
+        "substack_kindle.cli.fetch_posts",
+        lambda http_get, **kw: posts,
+    )
+    recorder = _RecordingHttpxPost()
+
+    rc = main(
+        argv=["--start", "2026-06-14", "--end", "2026-06-24"],
+        env=_env(),
+        feeds=_FEEDS,
+        http_post=recorder,
+        state_path=tmp_path / "state.json",
+    )
+    assert rc == 0
+    assert len(recorder.calls) == 1  # one epub sent, not skipped entirely
+
+    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["Attachments"][0]["Content"])
+    with zipfile.ZipFile(BytesIO(epub_bytes)) as zf:
+        combined = b"".join(zf.read(n) for n in zf.namelist()).decode(
+            "utf-8", errors="replace"
+        )
+    # Only the first post with the duplicated guid survives dedup; the second
+    # (same-guid) copy must not appear anywhere in the built EPUB.
+    assert "First Copy" in combined
+    assert "Second Copy" not in combined
+
+
 def test_main_loads_feeds_from_feeds_path_when_not_injected(monkeypatch, tmp_path):
     """With no ``feeds=`` injected, the feed URLs come from the FEEDS_PATH registry."""
     import json
@@ -287,3 +327,124 @@ def test_main_loads_feeds_from_feeds_path_when_not_injected(monkeypatch, tmp_pat
     )
     assert rc == 0
     assert seen["feed_urls"] == ["https://example.com/a/feed", "https://example.org/b/feed"]
+
+
+# --- feed URL SSRF allowlist (CodeRabbit, SAT-330 PR #60) --------------------
+
+
+class TestValidateFeedUrl:
+    """feeds.json is local config, but a compromised or mistyped entry must not
+    be usable to make this process fetch an arbitrary/internal host."""
+
+    def test_accepts_canonical_substack_feed_url(self):
+        from substack_kindle.cli import _validate_feed_url
+
+        _validate_feed_url("https://example.substack.com/feed")  # no raise
+
+    def test_rejects_non_https_scheme(self):
+        from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
+
+        with pytest.raises(InvalidFeedUrlError, match="https"):
+            _validate_feed_url("http://example.substack.com/feed")
+
+    def test_rejects_non_substack_host(self):
+        from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
+
+        with pytest.raises(InvalidFeedUrlError, match="substack.com"):
+            _validate_feed_url("https://internal.example.com/feed")
+
+    def test_rejects_substack_lookalike_host(self):
+        # A userinfo/lookalike host must not slip past a naive "contains
+        # substack.com" check.
+        from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
+
+        with pytest.raises(InvalidFeedUrlError):
+            _validate_feed_url("https://substack.com.evil.example/feed")
+
+    def test_rejects_non_feed_path(self):
+        from substack_kindle.cli import InvalidFeedUrlError, _validate_feed_url
+
+        with pytest.raises(InvalidFeedUrlError, match="/feed"):
+            _validate_feed_url("https://example.substack.com/archive")
+
+
+def test_http_get_default_rejects_disallowed_url_before_any_request(monkeypatch):
+    """The production HTTP getter must validate before it ever calls httpx —
+    proves the SSRF guard is wired into the real network path, not just
+    available as an unused helper."""
+    from substack_kindle.cli import InvalidFeedUrlError, _http_get_default
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("httpx.get must not be called for a disallowed URL")
+
+    monkeypatch.setattr("httpx.get", _boom)
+
+    with pytest.raises(InvalidFeedUrlError):
+        _http_get_default("https://internal.example.com/feed")
+
+
+def test_http_get_default_disables_redirects(monkeypatch):
+    """A redirect could otherwise steer an allowlisted-looking request at an
+    internal/arbitrary host post-validation."""
+    from substack_kindle.cli import _http_get_default
+
+    calls = {}
+
+    class _Resp:
+        content = b"<rss></rss>"
+
+        def raise_for_status(self):
+            return None
+
+    def _fake_get(url, *, timeout, follow_redirects):
+        calls["follow_redirects"] = follow_redirects
+        return _Resp()
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+
+    _http_get_default("https://example.substack.com/feed")
+    assert calls["follow_redirects"] is False
+
+
+# --- feeds.json registry validation (Sourcery advisory, SAT-330 PR #60) -----
+
+
+def test_load_feeds_default_rejects_invalid_json(tmp_path):
+    from substack_kindle.cli import _load_feeds_default
+
+    registry = tmp_path / "feeds.json"
+    registry.write_text("{not valid json")
+
+    with pytest.raises(RuntimeError, match="not valid JSON"):
+        _load_feeds_default(registry)
+
+
+def test_load_feeds_default_rejects_missing_feeds_key(tmp_path):
+    from substack_kindle.cli import _load_feeds_default
+
+    registry = tmp_path / "feeds.json"
+    registry.write_text('{"oops": []}')
+
+    with pytest.raises(RuntimeError, match="feeds"):
+        _load_feeds_default(registry)
+
+
+def test_load_feeds_default_rejects_non_string_feed_entries(tmp_path):
+    from substack_kindle.cli import _load_feeds_default
+
+    registry = tmp_path / "feeds.json"
+    registry.write_text('{"feeds": [123]}')
+
+    with pytest.raises(RuntimeError, match="feeds"):
+        _load_feeds_default(registry)
+
+
+def test_load_feeds_default_returns_feeds_list_on_valid_registry(tmp_path):
+    import json
+
+    from substack_kindle.cli import _load_feeds_default
+
+    registry = tmp_path / "feeds.json"
+    registry.write_text(json.dumps({"feeds": ["https://example.substack.com/feed"]}))
+
+    assert _load_feeds_default(registry) == ["https://example.substack.com/feed"]

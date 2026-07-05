@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import postmark, postmark_transport
 from .digest_title import format_digest_title
@@ -43,6 +45,28 @@ POSTMARK_URL = "https://api.postmarkapp.com/email"
 REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
 DEFAULT_FEEDS_PATH = "~/.config/substack-kindle/feeds.json"
 DEFAULT_STATE_PATH = Path("~/.config/substack-kindle/state.json")
+
+# feeds.json is local config, but a compromised or mistyped entry must not be
+# usable to make this process fetch an arbitrary/internal host (SSRF). Only a
+# canonical Substack RSS URL — https://<publication>.substack.com/feed — is
+# allowed through to the real HTTP client.
+_SUBSTACK_HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.substack\.com$")
+
+
+class InvalidFeedUrlError(ValueError):
+    """A feed URL does not match the allowed ``https://*.substack.com/feed`` pattern."""
+
+
+def _validate_feed_url(url: str) -> None:
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        raise InvalidFeedUrlError(f"feed URL must use https: {url!r}")
+    if not parts.hostname or not _SUBSTACK_HOSTNAME_RE.match(parts.hostname):
+        raise InvalidFeedUrlError(
+            f"feed URL host must be a *.substack.com subdomain: {url!r}"
+        )
+    if parts.path.rstrip("/") != "/feed":
+        raise InvalidFeedUrlError(f"feed URL path must be /feed: {url!r}")
 
 
 @dataclass(frozen=True)
@@ -105,7 +129,10 @@ def _http_get_default(url: str) -> bytes:
     # Lazy import so non-network callers (tests, dry-runs) never need httpx.
     import httpx
 
-    resp = httpx.get(url, timeout=30.0, follow_redirects=True)
+    _validate_feed_url(url)
+    # Redirects disabled: a redirect could otherwise be used to steer an
+    # allowlisted-looking request at an internal/arbitrary host post-validation.
+    resp = httpx.get(url, timeout=30.0, follow_redirects=False)
     resp.raise_for_status()
     return resp.content
 
@@ -113,7 +140,21 @@ def _http_get_default(url: str) -> bytes:
 def _load_feeds_default(path: Path) -> list[str]:
     import json
 
-    return json.loads(path.read_text())["feeds"]
+    try:
+        raw = path.read_text()
+    except OSError as exc:
+        raise RuntimeError(f"could not read feed registry at {path}: {exc}") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"feed registry at {path} is not valid JSON: {exc}") from exc
+    feeds = data.get("feeds") if isinstance(data, dict) else None
+    if not isinstance(feeds, list) or not all(isinstance(f, str) for f in feeds):
+        raise RuntimeError(
+            f'feed registry at {path} must be a JSON object with a "feeds" array '
+            "of URL strings"
+        )
+    return feeds
 
 
 def main(

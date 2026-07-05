@@ -12,6 +12,7 @@ The dedup key is the RSS ``<guid>`` (a stable per-post id), carried on
 
 from __future__ import annotations
 
+import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -62,7 +63,12 @@ def parse_feed(xml: bytes | str) -> list[FeedItem]:
     ``<description>``. ``pubDate`` is parsed as RFC 822; a date without a
     timezone is treated as UTC so window comparisons stay correct.
     """
-    root = ET.fromstring(xml)
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        # Keep the module's error contract: callers only need to catch
+        # RssFetchError, not the stdlib XML parser's exception type too.
+        raise RssFetchError(f"could not parse feed XML: {exc}") from exc
     channel = root.find("channel")
     if channel is None:
         raise RssFetchError("feed has no <channel> element")
@@ -116,7 +122,18 @@ def fetch_posts(
 
     posts: list[FetchedPost] = []
     for url in feed_urls:
-        for item in parse_feed(http_get(url)):
+        # One malformed/unreachable feed must not abort the whole sync run —
+        # isolate the failure to this feed and keep processing the rest.
+        try:
+            items = parse_feed(http_get(url))
+        except Exception as exc:
+            print(
+                f"substack_kindle.rss_fetch: skipping feed {url!r} "
+                f"after fetch/parse error: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        for item in items:
             if not (window_start <= item.published <= window_end):
                 continue
             posts.append(FetchedPost(

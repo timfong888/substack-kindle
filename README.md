@@ -26,7 +26,7 @@ trigger → resolve [start,end] → collect posts from approved RSS feeds → de
 ## Development
 
 ```bash
-uv sync          # or: pip install -e ".[dev]"
+uv sync          # installs runtime + dev deps (PEP 735 dependency-groups; plain pip cannot resolve them)
 pytest           # run tests (TDD: tests first)
 ruff check .     # lint
 pre-commit install   # enable the secret-scan hook

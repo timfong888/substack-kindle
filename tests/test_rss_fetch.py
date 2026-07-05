@@ -64,6 +64,13 @@ def test_parse_feed_uses_content_encoded_for_body():
     assert "<h1>Newer</h1>" in items[0].content_html
 
 
+def test_parse_feed_wraps_xml_parse_error_as_rss_fetch_error():
+    # ET.fromstring can raise a raw xml.etree.ElementTree.ParseError on
+    # malformed XML; callers should only ever need to catch RssFetchError.
+    with pytest.raises(RssFetchError, match="parse"):
+        parse_feed(b"<rss><channel><title>Broken</channel>")  # unclosed <rss>
+
+
 def test_parse_feed_raises_when_item_has_no_guid_or_link():
     # The guid is the dedup key; an item without one (and without a link to fall
     # back to) would produce an empty key that collides with every other such
@@ -152,6 +159,23 @@ def test_fetch_posts_calls_http_get_once_per_feed_url():
         window_end=datetime(2026, 6, 30, tzinfo=UTC),
     )
     assert calls == ["https://example.com/feed", "https://example.org/feed"]
+
+
+def test_fetch_posts_isolates_one_bad_feed_from_the_rest():
+    # A single unreachable/malformed feed must not abort the whole sync run —
+    # the good feed's posts still come back.
+    def _mixed_get(url):
+        if url == "https://bad.example/feed":
+            raise RssFetchError("simulated fetch/parse failure")
+        return SAMPLE_FEED
+
+    posts = fetch_posts(
+        _mixed_get,
+        feed_urls=["https://bad.example/feed", _FEED_URL],
+        window_start=datetime(2026, 6, 1, tzinfo=UTC),
+        window_end=datetime(2026, 6, 30, tzinfo=UTC),
+    )
+    assert [p.title for p in posts] == ["Older Post", "Newer Post"]
 
 
 def test_fetch_posts_rejects_empty_feed_urls():
