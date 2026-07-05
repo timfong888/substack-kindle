@@ -171,6 +171,26 @@ def test_th_table_with_empty_cells_treated_as_layout():
     assert not any(line.startswith("|") for line in md.splitlines())
 
 
+def test_layout_table_with_populated_header_and_blank_data_keeps_header_text():
+    # CodeRabbit finding: a table can fail the data-table test (needs a
+    # non-empty <th> AND a non-empty <td>) while still carrying real content
+    # in its <th> cells — e.g. a genuine header row above a data row that
+    # happens to be blank/whitespace on this message. Flattening as a layout
+    # table must not silently drop that <th> text; only <td> cells were
+    # walked previously.
+    html = (
+        "<table>"
+        "<tr><th>Quarterly Metrics</th><th>Region</th></tr>"
+        "<tr><td>\xa0</td><td>\xa0</td></tr>"
+        "</table>"
+    )
+    md = html_to_markdown(html)
+    assert "Quarterly Metrics" in md
+    assert "Region" in md
+    assert "<table>" not in md
+    assert not any(line.startswith("|") for line in md.splitlines())
+
+
 def test_data_table_nested_in_layout_wrapper_preserved():
     # Real newsletters wrap a data table inside an outer layout <table>.
     # The inner data table must be saved; the outer layout wrapper flattened.

@@ -76,13 +76,18 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
             # Layout table: unwrap each non-empty cell's children into a div,
             # preserving inner HTML structure (headings, bold, paragraph breaks)
             # so markdownify renders them with proper formatting instead of flat
-            # text.
-            cells = [td for td in table.find_all("td") if td.get_text(strip=True)]
+            # text. A table lands here whenever it fails the data-table test
+            # above (missing a non-empty <th> OR a non-empty <td>) — so it can
+            # still carry real content in <th> cells (e.g. a table with a
+            # populated header row but empty/blank data cells). Walk both tag
+            # types, in document order, so that content is never silently
+            # dropped.
+            cells = [cell for cell in table.find_all(("th", "td")) if cell.get_text(strip=True)]
             if cells:
                 wrapper = soup.new_tag("div")
-                for td in cells:
+                for cell in cells:
                     inner = soup.new_tag("div")
-                    for child in list(td.children):
+                    for child in list(cell.children):
                         inner.append(child.extract())
                     wrapper.append(inner)
                 table.replace_with(wrapper)

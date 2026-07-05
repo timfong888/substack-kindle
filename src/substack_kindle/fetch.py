@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any, Protocol
 
@@ -57,11 +58,31 @@ def _sender_display_name(raw_from: str) -> str:
     Prefers the display name (e.g. ``ByteByteGo`` from
     ``ByteByteGo <alex@bytebytego.com>``).  Falls back to the local part of
     the email address, title-cased (``lenny@substack.com`` → ``Lenny``).
+
+    A malformed or blank ``From`` header must never produce a string that
+    *looks* empty but is truthy — ``parseaddr`` can return a whitespace-only
+    display name, which passes a bare ``if name:`` check. Both the display
+    name and the derived local part are stripped before the truthiness
+    check, so any header that yields no real name returns ``""`` (falsy).
+    Callers rely on that to fall back to a subject-only label (SAT-288
+    acceptance criteria: no empty/misleading label).
+
+    A display name may also be RFC 2047 encoded-word (e.g.
+    ``=?UTF-8?B?...?=``) for non-ASCII sender names; that is decoded before
+    use so raw encoded tokens never leak into a TOC label.
     """
     name, address = parseaddr(raw_from)
     if name:
+        try:
+            name = str(make_header(decode_header(name)))
+        except (UnicodeDecodeError, ValueError):
+            pass  # keep the raw name rather than fail the whole fetch
+    name = name.strip()
+    if name:
         return name
-    local = address.split("@")[0].split("+")[0]
+    local = address.split("@")[0].split("+")[0].strip()
+    if not local:
+        return ""
     return local.replace("-", " ").replace("_", " ").title()
 
 

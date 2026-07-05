@@ -116,6 +116,44 @@ def test_extract_headers_handles_bare_from_with_no_display_name():
     assert headers.from_address == "lenny@substack.com"
 
 
+def test_extract_headers_sender_name_blank_for_whitespace_only_display_name():
+    # SAT-288: a whitespace-only display name (e.g. `"  " <>`) is truthy in
+    # Python, so a naive `if name:` check would return it as-is — a label
+    # that *looks* empty but isn't. sender_name must come back "" so the
+    # EPUB TOC falls back to the subject-only label instead of a blank one.
+    headers = extract_headers(_msg(
+        "m1", frm='"  " <>', subject="Hi", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == ""
+
+
+def test_extract_headers_sender_name_blank_when_from_has_no_at_sign():
+    # A malformed From header with no "@" at all (no valid address to derive
+    # a domain/local-part from) must not produce a misleading name.
+    headers = extract_headers(_msg(
+        "m1", frm="Undisclosed recipients:;", subject="Hi", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == ""
+
+
+def test_extract_headers_sender_name_blank_for_empty_from_header():
+    headers = extract_headers(_msg(
+        "m1", frm="", subject="Hi", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == ""
+
+
+def test_extract_headers_sender_name_decodes_rfc2047_encoded_display_name():
+    # Non-ASCII sender names are commonly RFC 2047 encoded-word in the raw
+    # header (e.g. "=?UTF-8?B?...?="). The raw encoded token must never leak
+    # into the TOC label — it must be decoded to the human-readable name.
+    headers = extract_headers(_msg(
+        "m1", frm="=?UTF-8?B?Qnl0ZUJ5dGVHbw==?= <alex@bytebytego.com>",
+        subject="Hi", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == "ByteByteGo"
+
+
 def test_extract_body_html_from_single_part_message():
     msg = _msg("m1", frm="x@x", subject="x", date=_DATE, body_html="<p>Hello</p>")
     assert extract_body_html(msg) == "<p>Hello</p>"
