@@ -1,8 +1,9 @@
 # substack-kindle
 
-Newsletter-to-Kindle service. Reads labelled newsletters from a customer's Gmail
-(read-only OAuth), converts them to EPUB deterministically, and delivers them to a
-Kindle via Postmark.
+Newsletter-to-Kindle service. Reads free Substacks from their canonical RSS feeds
+(no Gmail/OAuth on this path), converts them to EPUB deterministically, and delivers
+them to a Kindle via Postmark. (The Gmail read-only path is kept dormant for the
+deferred paid-Substack case.)
 
 > **Status:** MVP scaffold. See the planning docs (PRD, system design, user stories)
 > in the owner's vault and the Linear project **Newsletter-to-Kindle** (team `SAT`).
@@ -13,7 +14,7 @@ A single window-parameterized pipeline runs for both scheduled and on-demand
 (backfill) jobs:
 
 ```
-trigger → resolve [start,end] → collect approved-sender mail → dedup
+trigger → resolve [start,end] → collect posts from approved RSS feeds → dedup
         → parse to Markdown → build one EPUB (TOC) → send via Postmark → notify → record
 ```
 
@@ -25,7 +26,7 @@ trigger → resolve [start,end] → collect approved-sender mail → dedup
 ## Development
 
 ```bash
-uv sync          # or: pip install -e ".[dev]"
+uv sync          # installs runtime + dev deps (PEP 735 dependency-groups; plain pip cannot resolve them)
 pytest           # run tests (TDD: tests first)
 ruff check .     # lint
 pre-commit install   # enable the secret-scan hook
