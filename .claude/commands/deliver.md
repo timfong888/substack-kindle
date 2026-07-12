@@ -30,7 +30,7 @@ uv run substack-kindle --start <START> --end <END>
 ```
 
 3. Report back:
-   - The output line is prefixed `substack-kindle: ` and has the form
+   - The output line is prefixed `substack-kindle:` and has the form
      `substack-kindle: trigger=... status=... outcome=... delivered=N`
    - `status` is `succeeded` or `failed`.
    - `outcome` is `delivered` (EPUB sent), `empty` (no newsletters left after

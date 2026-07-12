@@ -31,14 +31,16 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
 
     Two classes:
 
-    * **Data table** — has at least one ``<th>`` element. Saved verbatim as HTML
-      and replaced with a sentinel ``<p>`` so markdownify never sees the table.
-      After markdownify the sentinel is swapped back for the raw HTML block, which
-      Python Markdown passes through unchanged into the final EPUB HTML.
+    * **Data table** — has at least one non-empty ``<th>`` AND at least one
+      non-empty ``<td>``. Saved verbatim as HTML and replaced with a sentinel
+      ``<p>`` so markdownify never sees the table. After markdownify the
+      sentinel is swapped back for the raw HTML block, which Python Markdown
+      passes through unchanged into the final EPUB HTML.
 
-    * **Layout table** — no ``<th>``. Email senders use these as multi-column
-      wrappers, not to display data. Their cell text is extracted and emitted as
-      plain ``<p>`` elements so the prose survives the round-trip.
+    * **Layout table** — missing a non-empty ``<th>`` or a non-empty ``<td>``.
+      Email senders use these as multi-column wrappers, not to display data.
+      Their cell text is extracted and emitted as plain ``<p>`` elements so
+      the prose survives the round-trip.
 
     Tables are processed innermost-first so a data table nested inside a layout
     wrapper is saved before the wrapper is flattened. The sentinel left in the
@@ -106,8 +108,9 @@ def html_to_markdown(html: str) -> str:
     pass through untouched.
 
     Tables are handled before markdownify runs (see ``_preprocess_tables``):
-    data tables (those with ``<th>``) are preserved as raw HTML blocks so they
-    render on Kindle with the existing CSS; layout tables are flattened to prose.
+    data tables (non-empty ``<th>`` AND non-empty ``<td>``) are preserved as
+    raw HTML blocks so they render on Kindle with the existing CSS; layout
+    tables are flattened to prose.
     """
     if not html or not html.strip():
         return ""
