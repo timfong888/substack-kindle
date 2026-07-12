@@ -38,6 +38,13 @@ _NEWSLETTER_CSS = (
     b"table{border-collapse:collapse;width:100%;margin:1em 0}"
     b"th,td{border:1px solid #ccc;padding:.4em .6em;text-align:left;vertical-align:top}"
     b"th{background-color:#f2f2f2;font-weight:bold}"
+    # Per-article header (SAT-550): title + publication shown at the top of the
+    # section body so a reader who opens an article always sees both, instead of
+    # them living only in the (easily-missed, sometimes-truncated) TOC label.
+    b".article-header{margin:0 0 1.2em;border-bottom:1px solid #ddd;padding-bottom:.5em}"
+    b".article-kicker{margin:0 0 .2em;font-size:.85em;font-weight:bold;"
+    b"text-transform:uppercase;letter-spacing:.04em;color:#555}"
+    b".article-title{margin:0;font-size:1.5em;line-height:1.2}"
 )
 _CSS_FILE = "style/newsletter.css"
 
@@ -83,12 +90,34 @@ def _post_process_html(html: str) -> tuple[str, list[tuple[str, str]]]:
     return str(soup), sub_headings
 
 
+def _article_header_html(title: str, publication: str) -> str:
+    """Return a visible in-body header for one article (SAT-550).
+
+    Renders the article title as an ``<h1 class="article-title">`` and, when a
+    publication name is known, a ``<p class="article-kicker">`` above it. This is
+    the reader-facing fix for "I don't know the publication or title": before,
+    both appeared only in the TOC nav label and the non-visible ``<head><title>``,
+    so opening an article dropped the reader into body prose with no title or
+    source. The title/publication are escaped so ``&``/``<``/``>`` stay literal.
+
+    The header's ``<h1>`` is injected AFTER ``_post_process_html`` runs, so it is
+    the single authoritative top-level heading; the article's own body headings
+    are still downgraded H1→H2 and sit beneath it in a clean hierarchy.
+    """
+    parts = ['<div class="article-header">']
+    if publication:
+        parts.append(f'<p class="article-kicker">{_html.escape(publication)}</p>')
+    parts.append(f'<h1 class="article-title">{_html.escape(title)}</h1>')
+    parts.append("</div>")
+    return "".join(parts)
+
+
 def _chapter_xhtml(title: str, body_html: str) -> str:
     # Escape the title and declare the XHTML namespace so a title containing
     # &, <, or > can't produce a malformed content document.
     return (
         f'<html xmlns="http://www.w3.org/1999/xhtml">'
-        f'<head><title>{_html.escape(title)}</title></head>'
+        f"<head><title>{_html.escape(title)}</title></head>"
         f"<body>{body_html}</body></html>"
     )
 
@@ -163,9 +192,7 @@ def build_job_epub(
 
     frontmatter = None
     if subtitle:
-        frontmatter = epub.EpubHtml(
-            title=book_title, file_name="frontmatter.xhtml", lang="en"
-        )
+        frontmatter = epub.EpubHtml(title=book_title, file_name="frontmatter.xhtml", lang="en")
         frontmatter.content = _frontmatter_xhtml(book_title, subtitle)
         book.add_item(frontmatter)
 
@@ -177,10 +204,9 @@ def build_job_epub(
         processed_html, sub_headings = _post_process_html(raw_html)
 
         toc_title = f"{section.sender} — {section.title}" if section.sender else section.title
-        chapter = epub.EpubHtml(
-            title=toc_title, file_name=f"section_{index}.xhtml", lang="en"
-        )
-        chapter.content = _chapter_xhtml(section.title, processed_html)
+        chapter = epub.EpubHtml(title=toc_title, file_name=f"section_{index}.xhtml", lang="en")
+        header_html = _article_header_html(section.title, section.sender)
+        chapter.content = _chapter_xhtml(section.title, header_html + processed_html)
         chapter.add_link(href=_CSS_FILE, rel="stylesheet", type="text/css")
         book.add_item(chapter)
         chapters.append(chapter)

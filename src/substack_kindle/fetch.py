@@ -51,7 +51,7 @@ def _header_value(payload: dict, name: str) -> str:
     return ""
 
 
-def _sender_display_name(raw_from: str) -> str:
+def sender_display_name(raw_from: str) -> str:
     """Return a human-readable publication name from a raw From header value.
 
     Prefers the display name (e.g. ``ByteByteGo`` from
@@ -82,7 +82,7 @@ def extract_headers(message: dict) -> MessageHeaders:
         date = date.replace(tzinfo=UTC)
     return MessageHeaders(
         from_address=address.lower(),
-        sender_name=_sender_display_name(raw_from),
+        sender_name=sender_display_name(raw_from),
         subject=subject,
         date=date,
     )
@@ -192,6 +192,7 @@ __all__ = [
     "extract_headers",
     "extract_body_html",
     "fetch_newsletters",
+    "sender_display_name",
 ]
 
 
