@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.errors import HeaderParseError
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any, Protocol
@@ -75,7 +76,7 @@ def _sender_display_name(raw_from: str) -> str:
     if name:
         try:
             name = str(make_header(decode_header(name)))
-        except (UnicodeDecodeError, ValueError):
+        except (HeaderParseError, LookupError, ValueError):
             pass  # keep the raw name rather than fail the whole fetch
     name = name.strip()
     if name:

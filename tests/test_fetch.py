@@ -154,6 +154,18 @@ def test_extract_headers_sender_name_decodes_rfc2047_encoded_display_name():
     assert headers.sender_name == "ByteByteGo"
 
 
+def test_extract_headers_sender_name_falls_back_on_unparseable_encoded_word():
+    # A display name with an unknown/bogus RFC 2047 charset makes
+    # email.header.decode_header raise LookupError. That must never crash
+    # the fetch (SAT-288 AC: unknown sender format -> subject-only fallback,
+    # never a crash) — the raw display-name text is kept as-is instead.
+    headers = extract_headers(_msg(
+        "m1", frm="=?BOGUS-CHARSET?B?SGVsbG8=?= <alex@bytebytego.com>",
+        subject="Hi", date=_DATE, body_html="x",
+    ))
+    assert headers.sender_name == "=?BOGUS-CHARSET?B?SGVsbG8=?="
+
+
 def test_extract_body_html_from_single_part_message():
     msg = _msg("m1", frm="x@x", subject="x", date=_DATE, body_html="<p>Hello</p>")
     assert extract_body_html(msg) == "<p>Hello</p>"
