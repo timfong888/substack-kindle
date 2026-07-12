@@ -11,7 +11,9 @@ Usage:
 
     result = process_messages(
         messages=[
-            InboundMessage(sender=..., subject=..., date_sent=..., html_body=..., message_id=...)
+            InboundMessage(
+                sender=..., subject=..., date_sent=..., html_body=..., message_id=...
+            )
         ],
         book_title="Newsletter Digest: June 5 2026",
         postmark_server_token=os.environ["POSTMARK_SERVER_TOKEN"],
@@ -28,6 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from .fetch import sender_display_name
 from .ids import newsletter_id as _newsletter_id
 from .job_epub import JobSection, build_job_epub
 from .parsing import html_to_markdown
@@ -94,7 +97,13 @@ def process_messages(
         markdown = html_to_markdown(msg.html_body)
         if not markdown.strip():
             continue
-        sections.append(JobSection(title=msg.subject, markdown=markdown))
+        sections.append(
+            JobSection(
+                title=msg.subject,
+                markdown=markdown,
+                sender=sender_display_name(msg.sender),
+            )
+        )
         ids_to_mark.append(nid)
 
     if not sections:
