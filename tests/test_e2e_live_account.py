@@ -99,7 +99,8 @@ def test_live_account_delivers_digest_to_kindle(tmp_path, capsys):
     # Throwaway state so the real dedup store is untouched and content in the
     # window is not suppressed as "already delivered".
     state_path = tmp_path / "state.json"
-    real_mtime_before = _REAL_STATE_PATH.stat().st_mtime if _REAL_STATE_PATH.exists() else None
+    real_state_existed_before = _REAL_STATE_PATH.exists()
+    real_mtime_before = _REAL_STATE_PATH.stat().st_mtime if real_state_existed_before else None
 
     exit_code = main(["--start", start, "--end", end], env=env, state_path=state_path)
 
@@ -108,8 +109,12 @@ def test_live_account_delivers_digest_to_kindle(tmp_path, capsys):
 
     assert exit_code == 0, "live account run did not succeed (exit != 0)"
 
-    # The real dedup store must not have been mutated by this test run.
-    if real_mtime_before is not None:
+    # The real dedup store must not have been mutated by this test run — nor
+    # created if it never existed (a real regression would otherwise slip
+    # through when a dev's machine has no pre-existing state.json).
+    if real_state_existed_before:
         assert _REAL_STATE_PATH.stat().st_mtime == real_mtime_before, (
             "live e2e must not mutate the real state.json"
         )
+    else:
+        assert not _REAL_STATE_PATH.exists(), "live e2e must not create the real state.json"

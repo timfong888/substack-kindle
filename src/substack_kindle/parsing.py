@@ -31,14 +31,16 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
 
     Two classes:
 
-    * **Data table** — has at least one ``<th>`` element. Saved verbatim as HTML
-      and replaced with a sentinel ``<p>`` so markdownify never sees the table.
-      After markdownify the sentinel is swapped back for the raw HTML block, which
-      Python Markdown passes through unchanged into the final EPUB HTML.
+    * **Data table** — has at least one non-empty ``<th>`` AND at least one
+      non-empty ``<td>``. Saved verbatim as HTML and replaced with a sentinel
+      ``<p>`` so markdownify never sees the table. After markdownify the
+      sentinel is swapped back for the raw HTML block, which Python Markdown
+      passes through unchanged into the final EPUB HTML.
 
-    * **Layout table** — no ``<th>``. Email senders use these as multi-column
-      wrappers, not to display data. Their cell text is extracted and emitted as
-      plain ``<p>`` elements so the prose survives the round-trip.
+    * **Layout table** — missing a non-empty ``<th>`` or a non-empty ``<td>``.
+      Email senders use these as multi-column wrappers, not to display data.
+      Their cell text is extracted and emitted as plain ``<p>`` elements so
+      the prose survives the round-trip.
 
     Tables are processed innermost-first so a data table nested inside a layout
     wrapper is saved before the wrapper is flattened. The sentinel left in the
@@ -58,7 +60,13 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
         if table.parent is None:
             continue
 
-        if table.find("th") is not None:
+        # A genuine data table needs both a non-empty header cell AND a non-empty
+        # data cell. A <th> alone is not enough: email layout templates (GH #57)
+        # use <th>-bearing tables whose cells are empty / whitespace / image-only,
+        # and preserving those as raw HTML renders an empty table on Kindle.
+        has_header = any(th.get_text(strip=True) for th in table.find_all("th"))
+        has_data = any(td.get_text(strip=True) for td in table.find_all("td"))
+        if has_header and has_data:
             # Data table: save and replace with a sentinel paragraph.
             key = _sentinel(counter)
             counter += 1
@@ -70,13 +78,18 @@ def _preprocess_tables(soup: BeautifulSoup) -> dict[str, str]:
             # Layout table: unwrap each non-empty cell's children into a div,
             # preserving inner HTML structure (headings, bold, paragraph breaks)
             # so markdownify renders them with proper formatting instead of flat
-            # text.
-            cells = [td for td in table.find_all("td") if td.get_text(strip=True)]
+            # text. A table lands here whenever it fails the data-table test
+            # above (missing a non-empty <th> OR a non-empty <td>) — so it can
+            # still carry real content in <th> cells (e.g. a table with a
+            # populated header row but empty/blank data cells). Walk both tag
+            # types, in document order, so that content is never silently
+            # dropped.
+            cells = [cell for cell in table.find_all(("th", "td")) if cell.get_text(strip=True)]
             if cells:
                 wrapper = soup.new_tag("div")
-                for td in cells:
+                for cell in cells:
                     inner = soup.new_tag("div")
-                    for child in list(td.children):
+                    for child in list(cell.children):
                         inner.append(child.extract())
                     wrapper.append(inner)
                 table.replace_with(wrapper)
@@ -95,8 +108,9 @@ def html_to_markdown(html: str) -> str:
     pass through untouched.
 
     Tables are handled before markdownify runs (see ``_preprocess_tables``):
-    data tables (those with ``<th>``) are preserved as raw HTML blocks so they
-    render on Kindle with the existing CSS; layout tables are flattened to prose.
+    data tables (non-empty ``<th>`` AND non-empty ``<td>``) are preserved as
+    raw HTML blocks so they render on Kindle with the existing CSS; layout
+    tables are flattened to prose.
     """
     if not html or not html.strip():
         return ""
