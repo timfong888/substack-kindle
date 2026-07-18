@@ -121,9 +121,7 @@ def test_single_newsletter_job_is_valid_one_entry_epub():
 def test_sections_content_is_present_in_epub():
     data = build_job_epub(_sections(2), book_title="J")
     with _zip(data) as zf:
-        body = "\n".join(
-            zf.read(n).decode("utf-8") for n in zf.namelist() if n.endswith(".xhtml")
-        )
+        body = "\n".join(zf.read(n).decode("utf-8") for n in zf.namelist() if n.endswith(".xhtml"))
     assert "Body 0." in body
     assert "Body 1." in body
 
@@ -176,9 +174,7 @@ def test_default_author_is_substack_digest():
 
 
 def test_explicit_author_is_preserved():
-    data = build_job_epub(
-        _sections(2), book_title="Custom", author="Weekly Mix"
-    )
+    data = build_job_epub(_sections(2), book_title="Custom", author="Weekly Mix")
     assert ">Weekly Mix<" in _opf_text(data)
 
 
@@ -253,9 +249,7 @@ def test_section_xhtml_references_css_stylesheet():
     data = build_job_epub(_sections(2), book_title="Test")
     for i in range(2):
         xhtml = _section_xhtml(data, i)
-        assert "newsletter.css" in xhtml, (
-            f"section_{i}.xhtml does not reference newsletter.css"
-        )
+        assert "newsletter.css" in xhtml, f"section_{i}.xhtml does not reference newsletter.css"
 
 
 def test_pipe_table_markdown_renders_as_html_table_element():
@@ -273,10 +267,13 @@ def test_pipe_table_markdown_renders_as_html_table_element():
 
 
 def test_h1_in_markdown_body_is_downgraded_to_h2():
-    """A # H1 heading in markdown must render as <h2> in the XHTML body, never <h1>.
+    """A # H1 in the article's own markdown must render as <h2>, never a bare <h1>.
 
-    The newsletter title is already represented in the NCX/nav TOC entry label;
-    an <h1> inside the body duplicates it and confuses Kindle's heading navigation.
+    The only <h1> in a section is the SAT-550 article-title header
+    (``<h1 class="article-title">``) injected by the builder — a single
+    authoritative top-level heading. Headings that come from the newsletter's
+    own body are still downgraded H1→H2 so they sit beneath it in a clean
+    hierarchy and don't confuse Kindle's heading navigation.
     """
     section = JobSection(
         title="My Newsletter",
@@ -284,7 +281,7 @@ def test_h1_in_markdown_body_is_downgraded_to_h2():
     )
     data = build_job_epub([section], book_title="Digest")
     xhtml = _section_xhtml(data)
-    assert "<h1>" not in xhtml, "H1 must be downgraded; found <h1> in body"
+    assert "<h1>" not in xhtml, "body-sourced H1 must be downgraded; found bare <h1>"
     assert "<h2" in xhtml, "expected at least one <h2> after H1 downgrade"
 
 
@@ -333,8 +330,13 @@ def test_toc_falls_back_to_title_only_when_sender_is_empty():
     assert top[0][0] == "Solo Post"
 
 
-def test_sender_prefix_does_not_leak_into_body_content():
-    """The sender prefix must appear only in the TOC label, not in the rendered body paragraphs."""
+def test_publication_appears_only_in_header_not_dumped_into_prose():
+    """Publication shows once, in the SAT-550 article header — never dumped into prose.
+
+    The combined "Sender — Title" TOC-label string must not be concatenated into
+    the body content, and the publication name appears exactly once (in the
+    article-kicker header), not duplicated across paragraphs.
+    """
     import re
 
     section = JobSection(
@@ -345,7 +347,53 @@ def test_sender_prefix_does_not_leak_into_body_content():
     data = build_job_epub([section], book_title="Digest")
     xhtml = _section_xhtml(data)
     body = re.search(r"<body>(.*?)</body>", xhtml, re.DOTALL).group(1)
-    assert "Mission Local" not in body
+    # The publication is present exactly once, inside the article header.
+    assert 'class="article-kicker"' in body
+    assert body.count("Mission Local") == 1
+    # The TOC-label format string is never spliced into body prose.
+    assert "Mission Local — The Article" not in body
+    assert "Body paragraph." in body
+
+
+def test_section_body_shows_article_title_and_publication_header():
+    """Every article body renders a visible header with its title + publication (SAT-550).
+
+    Happy path for "I don't know the publication or title": opening an article
+    shows both at the top of the body, non-truncated, even when the source body
+    does not lead with its own title heading.
+    """
+    import re
+
+    section = JobSection(
+        title="Weekly Roundup",
+        markdown="Straight into the body with no leading title heading.",
+        sender="ByteByteGo",
+    )
+    data = build_job_epub([section], book_title="Digest")
+    xhtml = _section_xhtml(data)
+    body = re.search(r"<body>(.*?)</body>", xhtml, re.DOTALL).group(1)
+    # Title rendered as a visible heading in the body.
+    assert 'class="article-title"' in body
+    assert "Weekly Roundup" in body
+    # Publication rendered as a visible kicker in the body.
+    assert 'class="article-kicker"' in body
+    assert "ByteByteGo" in body
+    # The header precedes the article prose.
+    assert body.index("ByteByteGo") < body.index("Straight into the body")
+    assert body.index("Weekly Roundup") < body.index("Straight into the body")
+
+
+def test_article_header_shows_title_without_kicker_when_sender_empty():
+    """With no publication, the header still shows the title but omits the kicker."""
+    import re
+
+    section = JobSection(title="Solo Post", markdown="Body only.")
+    data = build_job_epub([section], book_title="Digest")
+    xhtml = _section_xhtml(data)
+    body = re.search(r"<body>(.*?)</body>", xhtml, re.DOTALL).group(1)
+    assert 'class="article-title"' in body
+    assert "Solo Post" in body
+    assert 'class="article-kicker"' not in body
 
 
 def test_h1_converted_to_h2_shows_as_child_nav_entry():

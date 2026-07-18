@@ -191,6 +191,38 @@ def test_multiple_newsletters_produce_one_epub_with_all_sections():
     assert "Active users" in combined or "Weekly Stats" in combined
 
 
+def test_publication_derived_from_sender_appears_in_epub_body():
+    """The serverless path must show a publication name in the article header (SAT-550).
+
+    ``process_messages`` derives the publication from the message ``sender`` via
+    ``fetch.sender_display_name`` and passes it as ``JobSection.sender``; the
+    builder renders it as an ``article-kicker`` in the section body. Before the
+    fix this path passed no sender, so the publication was dropped entirely.
+
+    Asserts the *derived display name* lands in the kicker element specifically
+    (not just anywhere in the body) and that the raw email address is not
+    forwarded verbatim — a substring check on "ByteByteGo" alone would also
+    pass if the pipeline leaked the raw ``"ByteByteGo <alex@bytebytego.com>"``
+    header value instead of calling ``sender_display_name``.
+    """
+    import re
+
+    spy = _PostmarkSpy()
+    process_messages(
+        [_msg(_PLAIN_HTML, sender="ByteByteGo <alex@bytebytego.com>", subject="Weekly")],
+        **_base_kwargs(http_post=spy),
+    )
+    epub = _epub_from_spy(spy)
+    with zipfile.ZipFile(BytesIO(epub)) as zf:
+        body = "\n".join(
+            zf.read(n).decode("utf-8", errors="replace")
+            for n in zf.namelist()
+            if "section_" in n and n.endswith(".xhtml")
+        )
+    assert re.search(r'class="article-kicker"[^>]*>\s*ByteByteGo\s*<', body)
+    assert "alex@bytebytego.com" not in body
+
+
 def test_substack_html_chrome_is_stripped_from_epub_body():
     """Substack chrome (icon row, 'Read in app', 'Forwarded this email') must not
     appear in the delivered EPUB body — the SAT-265 cleaner must fire in the pipeline."""
