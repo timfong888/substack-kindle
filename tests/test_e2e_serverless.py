@@ -198,7 +198,15 @@ def test_publication_derived_from_sender_appears_in_epub_body():
     ``fetch.sender_display_name`` and passes it as ``JobSection.sender``; the
     builder renders it as an ``article-kicker`` in the section body. Before the
     fix this path passed no sender, so the publication was dropped entirely.
+
+    Asserts the *derived display name* lands in the kicker element specifically
+    (not just anywhere in the body) and that the raw email address is not
+    forwarded verbatim — a substring check on "ByteByteGo" alone would also
+    pass if the pipeline leaked the raw ``"ByteByteGo <alex@bytebytego.com>"``
+    header value instead of calling ``sender_display_name``.
     """
+    import re
+
     spy = _PostmarkSpy()
     process_messages(
         [_msg(_PLAIN_HTML, sender="ByteByteGo <alex@bytebytego.com>", subject="Weekly")],
@@ -211,8 +219,8 @@ def test_publication_derived_from_sender_appears_in_epub_body():
             for n in zf.namelist()
             if "section_" in n and n.endswith(".xhtml")
         )
-    assert 'class="article-kicker"' in body
-    assert "ByteByteGo" in body
+    assert re.search(r'class="article-kicker"[^>]*>\s*ByteByteGo\s*<', body)
+    assert "alex@bytebytego.com" not in body
 
 
 def test_substack_html_chrome_is_stripped_from_epub_body():
