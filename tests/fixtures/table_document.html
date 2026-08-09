@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  Source for tests/fixtures/table_document.pdf (SAT-830). Synthetic content —
+  no third-party material. Regenerate the PDF with:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --no-pdf-header-footer \
+      --print-to-pdf=tests/fixtures/table_document.pdf \
+      tests/fixtures/table_document.html
+
+  The table must keep visible rules: pdfplumber's table finder locates tables
+  by their ruling lines, so a borderless table would not exercise the path.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Widget Survey Summary</title>
+    <style>
+      body { font-family: Georgia, serif; margin: 40px; }
+      h1 { font-size: 20pt; }
+      table { border-collapse: collapse; margin-top: 18px; }
+      th, td { border: 1px solid #333; padding: 6px 12px; text-align: left; }
+      th { background: #eee; }
+    </style>
+  </head>
+  <body>
+    <h1>Widget Survey Summary</h1>
+    <p>
+      This is synthetic fixture prose. It exists so the extractor has ordinary
+      paragraph text to recover alongside the ruled table below.
+    </p>
+    <table>
+      <tr><th>Objective</th><th>Total</th><th>Group A</th></tr>
+      <tr><td>Reducing widget latency</td><td>70.3%</td><td>66.7%</td></tr>
+      <tr><td>Improving widget colour</td><td>61.0%</td><td>68.1%</td></tr>
+      <tr><td>Lowering widget cost</td><td>49.4%</td><td>59.7%</td></tr>
+    </table>
+    <p>Closing paragraph after the table.</p>
+  </body>
+</html>

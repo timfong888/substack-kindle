@@ -19,6 +19,11 @@ dependencies = [
     "google-auth>=2.34",
     "google-auth-oauthlib>=1.2",
     "httpx>=0.27",
+    # Single-file delivery (SAT-830): PDF text + table extraction. Pure Python
+    # on purpose — a `pdftotext` shell-out would add a system package to the
+    # deploy image and make output depend on which host ran it. Preferred over
+    # pypdf, which silently drops ruled tables.
+    "pdfplumber>=0.11",
 ]
 
 [project.scripts]
