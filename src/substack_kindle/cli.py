@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
@@ -38,11 +39,13 @@ from .job_epub import build_job_epub
 from .pipeline import ON_DEMAND, run_job
 from .processed_state import JsonFileProcessedStateStore
 from .rss_fetch import fetch_posts
+from .send_file import UnsupportedFileType, build_single_file_epub, title_from_filename
 from .service_version import service_subheader
 from .whitelist_check import ensure_distinct_local_parts
 
 POSTMARK_URL = "https://api.postmarkapp.com/email"
 REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
+_SUBCOMMANDS = ("run", "send-file")
 DEFAULT_FEEDS_PATH = "~/.config/substack-kindle/feeds.json"
 DEFAULT_STATE_PATH = Path("~/.config/substack-kindle/state.json")
 
@@ -107,18 +110,46 @@ def _parse_iso_date(s: str) -> datetime:
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="substack-kindle",
-        description="Run one on-demand Newsletter-to-Kindle job for a date window.",
+        description="Newsletter-to-Kindle: run a digest job, or send one local file.",
     )
-    parser.add_argument("--start", type=_parse_iso_date, required=True,
-                        help="Window start date (inclusive), YYYY-MM-DD.")
-    parser.add_argument("--end", type=_parse_iso_date, required=True,
-                        help="Window end date (inclusive), YYYY-MM-DD.")
-    args = parser.parse_args(argv)
-    # Fail fast on an inverted window so we don't issue a query that cannot match
-    # anything and quietly succeed with an empty digest.
-    if args.start > args.end:
-        parser.error("--start must be on or before --end")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser(
+        "run", help="Run one on-demand Newsletter-to-Kindle job for a date window."
+    )
+    run_parser.add_argument("--start", type=_parse_iso_date, required=True,
+                            help="Window start date (inclusive), YYYY-MM-DD.")
+    run_parser.add_argument("--end", type=_parse_iso_date, required=True,
+                            help="Window end date (inclusive), YYYY-MM-DD.")
+
+    send_parser = subparsers.add_parser(
+        "send-file", help="Convert one local file (.md/.txt/.pdf) and send it to Kindle."
+    )
+    send_parser.add_argument("path", type=Path, help="File to convert and send.")
+    send_parser.add_argument("--title", default=None,
+                             help="Book title and email subject; defaults to the filename.")
+
+    args = parser.parse_args(_with_default_command(argv))
+    if args.command == "run":
+        # Fail fast on an inverted window so we don't issue a query that cannot match
+        # anything and quietly succeed with an empty digest.
+        if args.start > args.end:
+            parser.error("--start must be on or before --end")
     return args
+
+
+def _with_default_command(argv: list[str] | None) -> list[str]:
+    """Insert the implicit ``run`` subcommand for the pre-SAT-830 flat form.
+
+    ``substack-kindle --start X --end Y`` predates subcommands and is still the
+    form used by the operator docs, so it keeps working: anything that does not
+    already lead with a subcommand (or a top-level help flag) is treated as
+    ``run``.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv or argv[0] in _SUBCOMMANDS or argv[0] in ("-h", "--help"):
+        return argv
+    return ["run", *argv]
 
 
 def _end_of_day(d: datetime) -> datetime:
@@ -157,6 +188,53 @@ def _load_feeds_default(path: Path) -> list[str]:
     return feeds
 
 
+def _send_file_command(
+    args: argparse.Namespace,
+    *,
+    config: CliConfig,
+    http_post: Callable[..., object] | None,
+) -> int:
+    """Convert one local file and send it. Returns a process exit code.
+
+    Reading the file is this layer's job: ``send_file`` takes bytes so the same
+    conversion serves a serverless trigger, where there is no local path.
+    """
+    try:
+        data = args.path.read_bytes()
+    except OSError as exc:
+        print(f"substack-kindle: cannot read {args.path}: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        epub_bytes = build_single_file_epub(
+            data, filename=args.path.name, title=args.title
+        )
+    except (UnsupportedFileType, ValueError) as exc:
+        print(f"substack-kindle: {exc}", file=sys.stderr)
+        return 1
+
+    title = args.title or title_from_filename(args.path.name)
+    try:
+        result = postmark.send_epub(
+            epub_bytes=epub_bytes,
+            to=config.kindle_email,
+            from_=config.whitelist_email,
+            filename=f"{args.path.stem}.epub",
+            server_token=config.postmark_server_token,
+            http_post=lambda url, **kwargs: postmark_transport.post(
+                url, http_post=http_post, **kwargs
+            ),
+            subject=title,
+            text_body=f"{title} — sent by substack-kindle send-file.",
+        )
+    except postmark.PostmarkError as exc:
+        print(f"substack-kindle: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"substack-kindle: sent {args.path.name} to {result.to} id={result.message_id}")
+    return 0
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -176,6 +254,11 @@ def main(
         whitelist_email=config.whitelist_email,
         kindle_email=config.kindle_email,
     )
+
+    # The one-off path shares the config and the collision guard, but none of
+    # the digest machinery below (feeds, dedup, processed state).
+    if args.command == "send-file":
+        return _send_file_command(args, config=config, http_post=http_post)
 
     http_get = http_get or _http_get_default
     feed_urls = feeds if feeds is not None else _load_feeds_default(config.feeds_path)
