@@ -16,6 +16,7 @@ from substack_kindle.convex_inbox import (
     LIST_INBOUND_FOR_WINDOW,
     fetch_inbound,
     make_client,
+    pipeline_signature,
 )
 from substack_kindle.handler import InboundMessage
 
@@ -24,6 +25,8 @@ SECRET = "pipeline-test-secret-not-real"
 START = datetime(2026, 10, 1, tzinfo=UTC)
 END = datetime(2026, 10, 1, 23, 59, 59, tzinfo=UTC)
 START_MS = 1_790_812_800_000  # 2026-10-01T00:00:00Z
+NOW = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+NOW_MS = 1_790_920_800_000  # 2026-10-02T06:00:00Z
 
 
 class FakeClient:
@@ -51,25 +54,54 @@ def _row(**overrides: Any) -> dict[str, Any]:
     return row
 
 
-def test_calls_window_query_with_secret_address_and_float_millis():
+def test_signature_matches_shared_cross_language_vector():
+    # Same vector is asserted in web/convex/pipeline.test.ts; keeps both sides in lockstep.
+    assert (
+        pipeline_signature(
+            "pipeline-test-secret-not-real",
+            "tim-abcdefgh@test123.resend.app",
+            1759276800000,
+            1759363200000,
+            1759280000000,
+        )
+        == "30a4ff66b959ecdd952de9b77a9d5718b83bae0bf00090f4efcf7a471bb3e9e6"
+    )
+
+
+def test_calls_window_query_with_signed_args_and_float_millis():
     client = FakeClient([])
-    fetch_inbound(client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET)
+    fetch_inbound(
+        client,
+        proxy_address=PROXY,
+        window_start=START,
+        window_end=END,
+        secret=SECRET,
+        now=lambda: NOW,
+    )
+    end_ms = START_MS + 86_399_000 + 1
     assert client.calls == [
         (
             LIST_INBOUND_FOR_WINDOW,
             {
-                "secret": SECRET,
                 "proxyAddress": PROXY,
                 "start": float(START_MS),
                 # Python windows are inclusive of the end; the Convex query's end
                 # is exclusive, so the end is sent 1 ms later.
-                "end": float(START_MS + 86_399_000 + 1),
+                "end": float(end_ms),
+                "issuedAt": float(NOW_MS),
+                "signature": pipeline_signature(SECRET, PROXY, START_MS, end_ms, NOW_MS),
             },
         )
     ]
     # Convex v.number() is float64; a Python int would be encoded as int64.
-    assert all(isinstance(client.calls[0][1][k], float) for k in ("start", "end"))
+    assert all(isinstance(client.calls[0][1][k], float) for k in ("start", "end", "issuedAt"))
     assert LIST_INBOUND_FOR_WINDOW == "pipeline:listInboundForWindow"
+
+
+def test_raw_secret_is_never_sent():
+    client = FakeClient([])
+    fetch_inbound(client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET)
+    assert SECRET not in repr(client.calls)
 
 
 def test_maps_rows_to_inbound_messages_in_order():

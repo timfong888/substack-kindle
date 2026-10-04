@@ -52,7 +52,9 @@ npx convex env set PIPELINE_SHARED_SECRET "$(openssl rand -hex 32)"
 ```
 
 Keep a copy of `PIPELINE_SHARED_SECRET` for the Python pipeline's environment
-(`convex_inbox.fetch_inbound(secret=...)`). Then `npx convex deploy` for prod.
+(`convex_inbox.fetch_inbound(secret=...)`). The secret itself is never sent: each
+request carries an HMAC over the address, window and time, valid for 5 minutes, so
+the pipeline host's clock must be accurate. Then `npx convex deploy` for prod.
 
 ## 5. Vercel
 

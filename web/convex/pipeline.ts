@@ -8,11 +8,45 @@ import { query } from "./_generated/server";
  * calls public functions over HTTP with an optional *user* JWT. It has no
  * supported way to call internal functions, and we don't want the pipeline to
  * hold a deploy/admin key (which can push code and read every table). So this
- * query is public but refuses to run unless the caller presents
- * PIPELINE_SHARED_SECRET (set via `npx convex env set`). It fails closed when
- * the env var is unset. Rotate the secret by setting a new value in Convex and
- * in the pipeline's environment.
+ * query is public but refuses to run unless the caller proves it holds
+ * PIPELINE_SHARED_SECRET (set via `npx convex env set`).
+ *
+ * The raw secret never travels as an argument (function arguments can show up
+ * in Convex's logs and dashboard). Instead the caller sends
+ *   signature = hex(HMAC-SHA256(secret, `${proxyAddress}:${start}:${end}:${issuedAt}`))
+ * with integer epoch-millisecond values. A signature is bound to one address
+ * and one window, and is only accepted within MAX_SKEW_MS of `issuedAt`, so a
+ * leaked log line can't be reused for another inbox or replayed later.
+ * Fails closed when the env var is unset. Rotate by setting a new value in
+ * Convex and in the pipeline's environment.
  */
+
+/** How far `issuedAt` may be from the server clock, either direction. */
+export const MAX_SKEW_MS = 5 * 60_000;
+
+/** hex(HMAC-SHA256(secret, "address:start:end:issuedAt")); integers only. */
+export async function pipelineSignature(
+  secret: string,
+  proxyAddress: string,
+  start: number,
+  end: number,
+  issuedAt: number,
+): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    enc.encode(`${proxyAddress}:${start}:${end}:${issuedAt}`),
+  );
+  return Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** Constant-time string comparison (over UTF-8 bytes); length mismatch still scans. */
 export function constantTimeEqual(a: string, b: string): boolean {
@@ -25,11 +59,20 @@ export function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function assertPipelineSecret(secret: string) {
-  const expected = process.env.PIPELINE_SHARED_SECRET;
-  if (!expected || !constantTimeEqual(secret, expected)) {
-    throw new Error("Unauthorized");
-  }
+async function assertPipelineSignature(args: {
+  proxyAddress: string;
+  start: number;
+  end: number;
+  issuedAt: number;
+  signature: string;
+}) {
+  const secret = process.env.PIPELINE_SHARED_SECRET;
+  const { proxyAddress, start, end, issuedAt, signature } = args;
+  const canonical = [start, end, issuedAt].every(Number.isSafeInteger);
+  const fresh = Math.abs(Date.now() - issuedAt) <= MAX_SKEW_MS;
+  if (!secret || !canonical || !fresh) throw new Error("Unauthorized");
+  const expected = await pipelineSignature(secret, proxyAddress, start, end, issuedAt);
+  if (!constantTimeEqual(signature, expected)) throw new Error("Unauthorized");
 }
 
 /**
@@ -38,13 +81,15 @@ function assertPipelineSecret(secret: string) {
  */
 export const listInboundForWindow = query({
   args: {
-    secret: v.string(),
     proxyAddress: v.string(),
     start: v.number(),
     end: v.number(),
+    issuedAt: v.number(),
+    signature: v.string(),
   },
-  handler: async (ctx, { secret, proxyAddress, start, end }) => {
-    assertPipelineSecret(secret);
+  handler: async (ctx, args) => {
+    await assertPipelineSignature(args);
+    const { proxyAddress, start, end } = args;
     const user = await ctx.db
       .query("users")
       .withIndex("byProxyAddress", (q) => q.eq("proxyAddress", proxyAddress.trim().toLowerCase()))
