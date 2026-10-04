@@ -305,6 +305,35 @@ describe("inbound.fetchBody", () => {
     );
   }
 
+  test("body far beyond Convex's ~8 MB argument limit is guarded in the action, then stored", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(resendBody({ html: "x".repeat(9_000_000), text: "plain" }))),
+    );
+    const t = convexTest(schema, modules);
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    const row = await t.run(async (ctx) => ctx.db.get(rowId));
+    expect(row?.bodyStatus).toBe("stored");
+    expect(row?.html).toBeUndefined();
+    expect(row?.htmlTruncated).toBe(true);
+    expect(row?.text).toBe("plain");
+  });
+
+  test("storeBody keeps truncation flags computed upstream by the action", async () => {
+    const t = convexTest(schema, modules);
+    const rowId = await pendingRow(t);
+    await t.mutation(internal.inbound.storeBody, {
+      rowId,
+      text: "plain",
+      htmlTruncated: true,
+    });
+    const row = await t.run(async (ctx) => ctx.db.get(rowId));
+    expect(row?.htmlTruncated).toBe(true);
+    expect(row?.textTruncated).toBeUndefined();
+  });
+
   test("non-2xx from Resend throws (visible in scheduler logs) and leaves row pending", async () => {
     vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 404 })));

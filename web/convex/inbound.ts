@@ -135,14 +135,20 @@ export const fetchBody = internalAction({
       html?: string | null;
       text?: string | null;
     };
+    // Guard here, before the bodies cross into the mutation: Convex caps
+    // function arguments (~8 MiB), so an oversize body (e.g. base64 images)
+    // would make runMutation throw and leave the row pending forever.
+    const bodies = guardBodies(email.html ?? undefined, email.text ?? undefined);
     await ctx.runMutation(internal.inbound.storeBody, {
       rowId,
       from: email.from ?? undefined,
       subject: email.subject ?? undefined,
       messageId: email.message_id ?? undefined,
       createdAt: email.created_at ?? undefined,
-      html: email.html ?? undefined,
-      text: email.text ?? undefined,
+      html: bodies.html,
+      text: bodies.text,
+      htmlTruncated: bodies.htmlTruncated || undefined,
+      textTruncated: bodies.textTruncated || undefined,
     });
   },
 });
@@ -156,11 +162,14 @@ export const storeBody = internalMutation({
     createdAt: v.optional(v.string()),
     html: v.optional(v.string()),
     text: v.optional(v.string()),
+    htmlTruncated: v.optional(v.boolean()),
+    textTruncated: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.rowId);
     if (row === null) return; // user deleted meanwhile
     const from = args.from ?? row.from;
+    // Re-guard as a safety net; keep flags the action already computed.
     const bodies = guardBodies(args.html, args.text);
     await ctx.db.patch(args.rowId, {
       from,
@@ -169,8 +178,8 @@ export const storeBody = internalMutation({
       receivedAt: parseTimestamp(args.createdAt, row.receivedAt),
       html: bodies.html,
       text: bodies.text,
-      htmlTruncated: bodies.htmlTruncated || undefined,
-      textTruncated: bodies.textTruncated || undefined,
+      htmlTruncated: bodies.htmlTruncated || args.htmlTruncated || undefined,
+      textTruncated: bodies.textTruncated || args.textTruncated || undefined,
       bodyStatus: "stored",
       kind: classifyKind(from),
     });
