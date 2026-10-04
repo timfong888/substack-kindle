@@ -1,7 +1,7 @@
 """End-to-end serverless pipeline tests (SAT-281 / serverless architecture).
 
 Exercises the full pipeline — HTML parsing → EPUB build → mocked Postmark send —
-without any live I/O (no Gmail, no OAuth, no real HTTP). Tests are intentionally
+without any live I/O (no real HTTP). Tests are intentionally
 coarse-grained: each one exercises a whole feature path, not a single module.
 
 These prove the composition that a serverless handler function will use, and
@@ -195,7 +195,7 @@ def test_publication_derived_from_sender_appears_in_epub_body():
     """The serverless path must show a publication name in the article header (SAT-550).
 
     ``process_messages`` derives the publication from the message ``sender`` via
-    ``fetch.sender_display_name`` and passes it as ``JobSection.sender``; the
+    ``email_headers.sender_display_name`` and passes it as ``JobSection.sender``; the
     builder renders it as an ``article-kicker`` in the section body. Before the
     fix this path passed no sender, so the publication was dropped entirely.
 

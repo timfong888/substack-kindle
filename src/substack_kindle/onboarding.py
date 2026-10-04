@@ -1,18 +1,14 @@
 """Customer onboarding flow (SAT-253 / Reqs 9, §Onboarding).
 
-Walks a new customer through: connect read-only Gmail -> enter kindle_email ->
-see the shared whitelist_email with instructions and the Amazon discovery path ->
-seed approved_sources by labelling existing newsletters (the B2 gesture). Steps
-are gated so they happen in order. External work (Gmail connect, sender
-registration) is injected, so this orchestrator stays decoupled.
+Walks a new customer through: enter kindle_email -> see the shared
+whitelist_email with instructions and the Amazon discovery path. Steps are
+gated so they happen in order.
 """
 
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 _AMAZON_DISCOVERY_PATH = (
     "In Amazon: Account & Lists -> Content & Devices -> Preferences -> "
@@ -29,52 +25,27 @@ class WhitelistInstructions:
 
 
 class OnboardingStep(enum.Enum):
-    CONNECT_GMAIL = "connect_gmail"
     ENTER_KINDLE_EMAIL = "enter_kindle_email"
     SHOW_WHITELIST = "show_whitelist"
-    SEED_SOURCES = "seed_sources"
     DONE = "done"
 
 
 class OnboardingFlow:
     """Stateful, ordered onboarding walkthrough for one new customer."""
 
-    def __init__(
-        self,
-        *,
-        whitelist_email: str,
-        connect_gmail: Callable[[], Any],
-        register_senders: Callable[[str], list[str]],
-    ) -> None:
+    def __init__(self, *, whitelist_email: str) -> None:
         self.whitelist_email = whitelist_email
-        self.connect_gmail_fn = connect_gmail
-        self.register_senders = register_senders
-        self.gmail_client = None
-        self.gmail_connected = False
         self.kindle_email = None
         self.whitelist_shown = False
-        self.approved_sources = []
-        self.sources_seeded = False
 
     def next_step(self) -> OnboardingStep:
-        if not self.gmail_connected:
-            return OnboardingStep.CONNECT_GMAIL
         if self.kindle_email is None:
             return OnboardingStep.ENTER_KINDLE_EMAIL
         if not self.whitelist_shown:
             return OnboardingStep.SHOW_WHITELIST
-        if not self.sources_seeded:
-            return OnboardingStep.SEED_SOURCES
         return OnboardingStep.DONE
 
-    def connect_gmail(self) -> Any:
-        self.gmail_client = self.connect_gmail_fn()
-        self.gmail_connected = True
-        return self.gmail_client
-
     def set_kindle_email(self, kindle_email: str) -> None:
-        if not self.gmail_connected:
-            raise ValueError("connect Gmail before entering the Kindle email")
         if not kindle_email or not kindle_email.strip():
             raise ValueError("kindle_email must not be empty")
         # Store the stripped form so downstream delivery/address matching never
@@ -93,18 +64,6 @@ class OnboardingFlow:
             ),
             amazon_discovery_path=_AMAZON_DISCOVERY_PATH,
         )
-
-    def seed_sources(self, *, label: str) -> list[str]:
-        if not self.whitelist_shown:
-            raise ValueError("show the whitelist instructions before seeding sources")
-        sources = self.register_senders(label)
-        if not sources:
-            # Zero approved sources means nothing would ever be delivered — don't
-            # let the flow report completion in that broken state.
-            raise ValueError("no approved sources were registered; label must match a sender")
-        self.approved_sources = sources
-        self.sources_seeded = True
-        return self.approved_sources
 
     def is_complete(self) -> bool:
         return self.next_step() is OnboardingStep.DONE

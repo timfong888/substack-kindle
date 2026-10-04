@@ -5,7 +5,7 @@ backfill code path. ``run_job`` executes collect -> dedup -> build -> send and
 records a job result (A4); ``initiate_on_demand_job`` is the on-demand entry that
 takes explicit dates and runs that same pipeline with trigger=on-demand. The
 collaborators (collect/dedup/build/send/record) are injected so this orchestrator
-stays decoupled from the concrete Gmail/EPUB/Postmark/store modules.
+stays decoupled from the concrete fetch/EPUB/Postmark/store modules.
 """
 
 from __future__ import annotations

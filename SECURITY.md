@@ -6,7 +6,6 @@ This repository is **public**. The policy below is non-negotiable.
 
 The following are NEVER committed:
 
-- Gmail OAuth client secret and tokens
 - Postmark (transactional email / `whitelist_email`) credentials
 - Any per-customer config values (Kindle addresses, recipient emails, tokens)
 - Any API key, password, or private key of any kind

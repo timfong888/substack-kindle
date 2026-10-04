@@ -1,6 +1,6 @@
 # substack-kindle
 
-Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters from Gmail, builds a single EPUB per daily window, delivers via Postmark to the user's Kindle address.
+RSS → EPUB → Kindle newsletter digest service. Reads approved newsletters from their RSS feeds, builds a single EPUB per daily window, delivers via Postmark to the user's Kindle address.
 
 ## Stack
 
@@ -9,13 +9,12 @@ Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters 
 - `markdownify` + `BeautifulSoup` — HTML → Markdown parsing
 - `python-markdown` with `extra` extension — Markdown → XHTML
 - Postmark REST API — email delivery (attachment, not MCP)
-- Gmail MCP (`mcp__claude_ai_Gmail__*`) — newsletter fetch at run time
 - Linear team: **Satchel** (`SAT-*` ticket prefix)
 - Repo: `~/development/substack-kindle`
 
 ## Architecture
 
-- `handler.py` — serverless composition root; no Gmail/OAuth dependency
+- `handler.py` — serverless composition root; processes pre-fetched `InboundMessage`s
 - `job_epub.py` — EPUB builder; CSS tables, hierarchical TOC, H1→H2 downgrade
 - `pipeline.py` — shared run_job orchestrator; all collaborators injected
 - `cli.py` — local entry point; reads `.env` for secrets

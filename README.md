@@ -1,9 +1,7 @@
 # substack-kindle
 
-Newsletter-to-Kindle service. Reads free Substacks from their canonical RSS feeds
-(no Gmail/OAuth on this path), converts them to EPUB deterministically, and delivers
-them to a Kindle via Postmark. (The Gmail read-only path is kept dormant for the
-deferred paid-Substack case.)
+Newsletter-to-Kindle service. Reads free Substacks from their canonical RSS feeds,
+converts them to EPUB deterministically, and delivers them to a Kindle via Postmark.
 
 > **Status:** MVP scaffold. See the planning docs (PRD, system design, user stories)
 > in the owner's vault and the Linear project **Newsletter-to-Kindle** (team `SAT`).
