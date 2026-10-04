@@ -36,9 +36,10 @@ export const recentConfirmations = query({
     if (user === null) return [];
     const rows = await ctx.db
       .query("receivedEmails")
-      .withIndex("byUserAndReceivedAt", (q) => q.eq("userId", user._id))
+      .withIndex("byUserKindAndReceivedAt", (q) =>
+        q.eq("userId", user._id).eq("kind", "confirmation"),
+      )
       .order("desc")
-      .filter((q) => q.eq(q.field("kind"), "confirmation"))
       .take(CONFIRMATION_LIMIT);
     return rows.map((r) => ({
       id: r._id,

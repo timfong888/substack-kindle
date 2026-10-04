@@ -33,5 +33,7 @@ export default defineSchema({
     kind: emailKind,
   })
     .index("byResendEmailId", ["resendEmailId"])
-    .index("byUserAndReceivedAt", ["userId", "receivedAt"]),
+    .index("byUserAndReceivedAt", ["userId", "receivedAt"])
+    // Lets the dashboard read only confirmations, not every stored newsletter.
+    .index("byUserKindAndReceivedAt", ["userId", "kind", "receivedAt"]),
 });
