@@ -8,7 +8,7 @@
 > - Transactional email: Postmark replaced by **Resend** (see "Transactional Email Provider — Resend").
 > - Ingestion: RSS is the primary path for public newsletters (shipped in SAT-330); paid newsletters
 >   are under design exploration — see [`design/ingestion-rss-and-proxy-inbox.md`](design/ingestion-rss-and-proxy-inbox.md).
->   Requirements 1, 9, 13 and the "Gmail Label Gesture" section are **under review** as a result.
+>   Requirements 1, 6, 9, 13 and the "Gmail Label Gesture" section are **under review** as a result.
 
 ## Goal
 
@@ -37,7 +37,7 @@ A fourth address is proposed by the design exploration: **proxy_email** — a pe
 3. Track each newsletter by a unique reference ID.
 4. Track each newsletter's sending address.
 5. Track the EPUB name and number (issue/sequence).
-6. Assign each newsletter a unique ID, produced by a single clear, reusable hash function over a fixed combination of:
+6. *(Under review — see "Identity across channels" in the design exploration for a proposed post-URL canonical key.)* Assign each newsletter a unique ID, produced by a single clear, reusable hash function over a fixed combination of:
     - sender email address
     - date sent
     - subject line
