@@ -8,6 +8,18 @@ goes into the Clerk, Convex, Resend and Vercel dashboards, never into git.
 `<deployment>` below is your Convex deployment name (e.g. `happy-otter-123`).
 Webhooks go to the `.convex.site` host, not `.convex.cloud`.
 
+### No-terminal route
+
+Every step below can be done in the four dashboards, with no local CLI:
+- **Convex:** create the project in the dashboard, then Settings → **Deploy Keys** →
+  generate a Production deploy key. Set step 4's variables under Settings →
+  **Environment Variables** instead of `npx convex env set`.
+- **Vercel** deploys the Convex functions on every build: set the build command to
+  `npx convex deploy --cmd 'npm run build'` and add `CONVEX_DEPLOY_KEY`.
+  `NEXT_PUBLIC_CONVEX_URL` is then set automatically during the build.
+- Until this PR merges, deploy the `feat/convex-clerk-resend-inbox` branch (a Vercel
+  preview deployment) for the smoke test.
+
 ## 1. Convex project
 
 1. `cd web && npm ci && npx convex dev` — log in, create the project. This writes
