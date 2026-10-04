@@ -33,7 +33,7 @@ If this holds, paid Substacks need **no email infrastructure at all**. The custo
 publication; the existing RSS pipeline handles it.
 
 - Cost: zero marginal infra. Reuses `rss_fetch.py`.
-- Changes: the SSRF allowlist in `rss_fetch.py` currently accepts only `https://*.substack.com/feed`; extend it to the
+- Changes: the SSRF allowlist in `cli.py` (`_validate_feed_url`) currently accepts only `https://*.substack.com/feed`; extend it to the
   private-feed shape. Private-feed URLs embed a credential: store them as secrets, never log them.
 - Limits: Substack only. Ghost, beehiiv and others need their own answer (or option B/C). Token revocation and
   rotation are Substack-controlled.
