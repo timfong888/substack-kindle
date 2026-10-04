@@ -26,3 +26,38 @@ jobs:
 
       - name: Test (pytest)
         run: pytest
+
+  web:
+    name: web (typecheck + vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Offline regeneration (no Convex deployment needed); fails if the
+      # committed convex/_generated is stale.
+      - name: Convex generated code is up to date
+        run: |
+          npm run codegen:offline
+          test -z "$(git status --porcelain -- convex/_generated)" || {
+            git status --porcelain -- convex/_generated
+            echo "convex/_generated is stale: run 'npm run codegen:offline' in web/ and commit."
+            exit 1
+          }
+
+      - name: Typecheck (tsc)
+        run: npx tsc --noEmit
+
+      - name: Test (vitest + convex-test)
+        run: npx vitest run
