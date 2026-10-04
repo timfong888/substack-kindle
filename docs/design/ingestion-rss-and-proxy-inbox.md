@@ -162,6 +162,22 @@ Use Google sign-in (OpenID Connect) with scopes `openid email` only. The service
 none of the restricted-scope verification or CASA burden that killed the Gmail path applies. Offer an email
 magic link (sent through Resend) as the non-Google alternative.
 
+### Auth and platform decisions (2026-10-04)
+
+- **Auth: Clerk.** It provides the hosted sign-in UI, sessions and verified email. Launch with **email magic link
+  only**: no OAuth client is needed. Add "Continue with Google" later. In development Clerk's shared Google credentials
+  work; in production Clerk requires our own Google OAuth client ID and secret (scopes `openid email profile`,
+  about 15 minutes in Google Cloud, no CASA).
+- **Database and webhooks: Convex.** Clerk `user.created` → Convex HTTP action → user row and proxy address.
+  Resend `email.received` → Convex HTTP action → fetch body → stored email row. Convex validates Clerk sessions
+  natively.
+- **Web app: Next.js on Vercel** (`web/`): sign-in and a dashboard showing the proxy address.
+- **Inbound domain: Resend-managed `<anything>@<id>.resend.app`** (catch-all, no DNS) for now; move to our own
+  subdomain later. Proxy address format: `<slug>-<8 random chars>@<id>.resend.app`.
+- **Pipeline:** the Python job reads stored emails for its window from Convex (Python client) and feeds them to
+  `handler.process_messages`. Body parsing stays in Python (no LLM).
+- Provisioning steps: `docs/setup-inbox.md` (added with the implementation PR).
+
 ### Flow
 
 1. **Sign in** — "Continue with Google" or "Email me a link". Create the customer row keyed by Google `sub` (or
