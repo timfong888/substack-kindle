@@ -113,6 +113,7 @@ describe("pipeline.listInboundForWindow", () => {
       html: "<p>at-start</p>",
       text: "at-start",
       htmlTruncated: false,
+      textTruncated: false,
     });
   });
 

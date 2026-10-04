@@ -49,6 +49,7 @@ def _row(**overrides: Any) -> dict[str, Any]:
         "html": "<p>Hello</p>",
         "text": "Hello",
         "htmlTruncated": False,
+        "textTruncated": False,
     }
     row.update(overrides)
     return row
@@ -214,6 +215,16 @@ def test_rejects_empty_secret():
         fetch_inbound(
             FakeClient([]), proxy_address=PROXY, window_start=START, window_end=END, secret=""
         )
+
+
+def test_both_bodies_dropped_for_size_yield_visible_placeholder():
+    # Otherwise the body is empty and the handler silently skips the issue.
+    client = FakeClient([_row(html=None, text=None, htmlTruncated=True, textTruncated=True)])
+    [msg] = fetch_inbound(
+        client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET
+    )
+    assert "too large" in msg.html_body
+    assert msg.subject == "Weekly issue"
 
 
 def test_client_errors_propagate():

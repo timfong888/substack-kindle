@@ -112,6 +112,7 @@ export const listInboundForWindow = query({
         html: r.html ?? null,
         text: r.text ?? null,
         htmlTruncated: r.htmlTruncated ?? false,
+        textTruncated: r.textTruncated ?? false,
       }));
   },
 });

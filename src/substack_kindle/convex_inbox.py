@@ -50,7 +50,14 @@ def _row_to_message(row: dict[str, Any]) -> InboundMessage:
     if body is None:
         # html is dropped when oversize (htmlTruncated); fall back to plain text.
         text = row.get("text")
-        body = f"<pre>{html.escape(text, quote=False)}</pre>" if text else ""
+        if text:
+            body = f"<pre>{html.escape(text, quote=False)}</pre>"
+        elif row.get("htmlTruncated") or row.get("textTruncated"):
+            # Both bodies dropped for size: keep the issue visible in the digest
+            # rather than an empty body the handler would silently skip.
+            body = "<p>This issue was too large to include. Read it in your email or online.</p>"
+        else:
+            body = ""
     return InboundMessage(
         sender=row["from"],
         subject=row["subject"],
