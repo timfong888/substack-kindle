@@ -77,6 +77,8 @@ Backfill is the primitive. Every run — scheduled or on-demand — is a job def
 
 ### Requirement 13 — safety constraint on the approval click
 
+*Applies only if an approval email ever reaches a proxy address. The service does not read customer inboxes, so by default the customer confirms the email themselves.*
+
 Following a link contained in an inbox email is a state-changing action driven by email content. To keep this safe:
 
 - The agent follows the Amazon approval link ONLY when it is expecting one — i.e. during onboarding, immediately after the customer has added whitelist_email.
@@ -144,7 +146,7 @@ Stored as data from day one — one row in the MVP, scalable to many customers.
 4. Discovery path for customers who have not set this up: Amazon.com -> Account -> Manage Your Content and Devices -> Preferences -> Personal Document Settings On that page the customer will find:
     - each device's Send-to-Kindle email address (editable)
     - the Approved Personal Document E-mail List (where whitelist_email goes)
-5. During this onboarding window, the agent watches for and follows the Amazon approval email (requirement 13, subject to its safety constraint).
+5. The customer confirms the Amazon approved-sender email themselves (requirement 13); the service does not read their inbox. Step 6 verifies the chain end-to-end.
 6. Tool offers a "send test document" action to verify the full chain end-to-end before any scheduled run is enabled.
 7. Customer registers approved sources (feed URLs; private feed URLs or proxy-address senders for paid newsletters).
 
