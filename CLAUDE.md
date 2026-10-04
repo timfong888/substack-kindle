@@ -2,6 +2,8 @@
 
 Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters from Gmail, builds a single EPUB per daily window, delivers via Postmark to the user's Kindle address.
 
+**Requirements and design docs:** [`docs/`](docs/README.md) — read `docs/requirements.md` before feature work.
+
 ## Stack
 
 - Python 3.14, `uv` for dependency management
