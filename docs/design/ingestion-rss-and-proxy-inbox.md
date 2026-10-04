@@ -153,6 +153,53 @@ Onboarding (option B shown; C differs only in step 3):
 The customer must always be able to answer "where do my newsletters go?" A per-customer page lists each
 publication, its channel (RSS / private feed / email), last issue received, and last delivered to Kindle.
 
+## Sign-up and proxy-address flow
+
+### "Sign in with Google" is not Gmail access
+
+Use Google sign-in (OpenID Connect) with scopes `openid email` only. The service receives a verified email address
+(`email`, `email_verified`, a stable `sub` id) and **nothing from the mailbox**. These are non-sensitive scopes, so
+none of the restricted-scope verification or CASA burden that killed the Gmail path applies. Offer an email
+magic link (sent through Resend) as the non-Google alternative.
+
+### Flow
+
+1. **Sign in** — "Continue with Google" or "Email me a link". Create the customer row keyed by Google `sub` (or
+   the verified email), storing `recipient_email`.
+2. **Proxy address is issued immediately** — generate a random, unguessable local part, e.g.
+   `tim-7f3k9q@in.<our-domain>`, and store it. No mailbox is provisioned: the inbound subdomain's MX points to
+   Resend and every address on it is received (**verify** catch-all). The "inbox" is our own table of received
+   messages keyed by proxy address. Unknown local parts are dropped.
+3. **Kindle** — enter `kindle_email`; show the shared `whitelist_email` with the Amazon steps; "Send test document".
+4. **Add publications** — paste Substack URLs. Free ones go to RSS straight away.
+5. **Paid publications** — in order of preference:
+   a. paste the private feed URL (if #66 confirms it exists);
+   b. add a mail forward rule to the proxy address (copy-paste filter text; we show the forwarding-confirmation code
+      when it lands at the proxy);
+   c. change the Substack account email to the proxy (pass-through; see risks under option C).
+6. **Dashboard** — each publication with its channel, last issue received, and last delivered to Kindle.
+
+### Can the Substack email change be done by API / curl instead of the browser?
+
+Not reliably, and not without the customer doing the browser step anyway:
+
+- Substack has **no public API**. Unofficial endpoints exist (`substack.com/api/v1/*`, community-mapped), but they
+  are undocumented, can change without notice, and need the customer's Substack **session cookie**. Holding that
+  cookie means holding full account access, which is a large credential and terms-of-service liability.
+- Substack's email change sends **confirmation emails to both the old and the new address** and logs the user out
+  everywhere. The new-address confirmation would reach our proxy and could be auto-handled. The old-address one
+  lands in the customer's real inbox, so **the customer must click it**. Curl can't remove that step.
+- The change is **account-wide**: every subscription and the login magic links move to the proxy. If the proxy
+  address already has a Substack account, Substack merges the two.
+
+What *can* be done without a browser: the unofficial per-publication free-subscribe endpoint
+(`POST https://<pub>.substack.com/api/v1/free`, form field `email`) subscribes any address to a **free**
+publication. We don't need this, because free publications come via RSS. It doesn't help paid ones: a paid
+subscription belongs to the account that paid for it.
+
+**Conclusion:** don't automate the Substack email change. Prefer the private feed (5a) or a forward rule (5b),
+both of which leave the customer's Substack account untouched.
+
 ## Open questions
 
 1. Is the Substack private feed real and full-text for paid posts? (Decides how much of B/C we need.)

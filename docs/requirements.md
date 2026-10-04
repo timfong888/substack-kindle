@@ -4,7 +4,8 @@
 > Design explorations that may change these requirements live in [`docs/design/`](design/).
 >
 > **Revision 2026-10-04**
-> - Code review: Greptile replaced by **Sourcery + Claude Code review skills** (see S2/S3, Development Loop).
+> - Code review: Greptile removed. **Claude Code review skills** are the coding agent's review loop. Sourcery and
+>   CodeRabbit run as server-side PR reviewers; CodeRabbit is kept while under evaluation (see S2/S3).
 > - Transactional email: Postmark replaced by **Resend** (see "Transactional Email Provider — Resend").
 > - Ingestion: RSS is the primary path for public newsletters (shipped in SAT-330); paid newsletters
 >   are under design exploration — see [`design/ingestion-rss-and-proxy-inbox.md`](design/ingestion-rss-and-proxy-inbox.md).
@@ -194,13 +195,13 @@ Two nested loops keep the agent productive and self-correcting. TDD is what make
 - Mechanism: the `/loop` skill (re-runs a prompt/command, interval or self-paced) or an equivalent shell `while` loop driving the agent. This is the "keep iterating until the queue is empty" layer.
 - Guardrails: the agent only advances when the merge gate is satisfied; it does not self-merge past a failing gate. A story it cannot complete is left in a clearly-flagged state for human review rather than force-pushed.
 
-**Inner loop — per-PR review resolution (Sourcery + Claude Code review skills).** Within a single PR, the agent drives the review to clean before merge: open PR → Sourcery reviews → Claude Code review skills run → agent reads the findings → revise and push → re-review → repeat until there are no unresolved comments. Then the merge gate lets it land.
+**Inner loop — per-PR review resolution (Claude Code review skills).** Within a single PR, the agent drives the review to clean before merge: run Claude Code review skills → fix → open PR → server-side reviewers (Sourcery; CodeRabbit while under evaluation) comment → agent verifies and resolves every finding → repeat until there are no unresolved comments. Then the merge gate lets it land.
 
-- Mechanism: Sourcery (`sourcery-ai` GitHub App, server-side PR reviewer) plus Claude Code's review skills (e.g. `/code-review`, `/security-review`, `/simplify`).
+- Mechanism: Claude Code's review skills (e.g. `/code-review`, `/security-review`, `/simplify`) for the coding agent; Sourcery (`sourcery-ai` GitHub App) and CodeRabbit (`.coderabbit.yaml`, under evaluation) as server-side reviewers.
 - References: *TBD — owner to add links to the Sourcery setup and the specific Claude skills used for PR review.*
 - Complements, does not replace, CI (S4, tests). Both are part of the merge gate.
 
-**Merge gate (see S1/S2/S4):** a change reaches main only after the Sourcery review is complete, CI tests pass, and the PR is approved per branch protection.
+**Merge gate (see S1/S2/S4):** a change reaches main only after the Claude review loop is clean, server-side review comments are resolved, CI tests pass, and the PR is approved per branch protection.
 
 ---
 
@@ -231,7 +232,7 @@ S1. GitHub repository — CREATED - Repository: https://github.com/timfong888/su
 
 S1a. Secrets policy (CRITICAL — public repo) - No tokens, passwords, API keys, OAuth client secrets, or credentials of any kind are ever committed to the repository. - Specifically excluded from the repo: Gmail OAuth client secret and tokens, any code-review service API key, transactional-email credentials (`RESEND_API_KEY`; formerly `POSTMARK_SERVER_TOKEN`), Resend webhook signing secret, Substack private-feed URLs (they embed an auth token), and any per-customer config values. - All secrets are supplied at runtime via environment variables or a secrets manager. Claude Managed Agents provides credential management — use it; do not hardcode. - .gitignore must cover .env files and any local credential files. - Enable GitHub secret scanning and push protection on the repo (free for public repos) so an accidental commit of a secret is blocked at push. - Add a pre-commit secret-scan hook (e.g. gitleaks / trufflehog) as a local gate before push. - Non-secret review config MAY be committed. Acceptance: secret scanning enabled; a test commit containing a dummy key is blocked by push protection and/or the pre-commit hook.
 
-S2. Sourcery — PR reviewer - Sourcery is installed on the repository and reviews PRs automatically. - Configured as a required status check that blocks merge until the review is complete. Acceptance: opening a PR triggers a Sourcery review; merge is blocked until the review completes. *(Replaces Greptile. Note: the repo still contains `.coderabbit.yaml` and CodeRabbit references in README, SECURITY.md and CLAUDE.md — reconcile.)*
+S2. Sourcery — PR reviewer - Sourcery is installed on the repository and reviews PRs automatically. - Configured as a required status check that blocks merge until the review is complete. Acceptance: opening a PR triggers a Sourcery review; merge is blocked until the review completes. *(Replaces Greptile.)* CodeRabbit (`.coderabbit.yaml`) also stays installed while the owner evaluates it; its findings are handled like Sourcery's.
 
 S3. Claude Code review skills (agent-side inner loop) - The development agent runs Claude Code review skills on its own PRs and resolves findings before requesting human approval. - References: *TBD — owner to add.* - Complements S2 — it does not replace it.
 
@@ -239,7 +240,7 @@ S4. CI test runner - A CI pipeline runs the full test suite on every PR. - Requi
 
 S5. Linear workspace - A Linear team/project exists to receive the user stories and engineering sub-issues produced by the LINEARIZE role. Acceptance: issues can be created and linked to GitHub PRs.
 
-Merge gate summary: a change reaches main only after (a) Sourcery review complete (S2), (b) CI tests pass (S4), (c) PR approved per branch protection (S1). AI review and CI are complementary — AI review is sampling-based and catches different issues than the test suite; neither substitutes for the other.
+Merge gate summary: a change reaches main only after (a) Claude review loop clean and server-side review (Sourcery; CodeRabbit under evaluation) resolved (S2/S3), (b) CI tests pass (S4), (c) PR approved per branch protection (S1). AI review and CI are complementary — AI review is sampling-based and catches different issues than the test suite; neither substitutes for the other.
 
 ---
 
@@ -263,4 +264,4 @@ LINEARIZE Create user stories in Linear. For each user story, create sub-issues 
 - ~~Confirm the transactional email provider and its attachment cap.~~ RESOLVED (2026-10-04) — Resend. Verify the current per-email size limit before re-pointing `size_budget.py`.
 - Paid-newsletter ingestion path — see [`design/ingestion-rss-and-proxy-inbox.md`](design/ingestion-rss-and-proxy-inbox.md).
 - Code review references (Sourcery setup, Claude skills) — owner to add.
-- Remove or keep CodeRabbit config now that Sourcery is the reviewer.
+- ~~Remove or keep CodeRabbit?~~ Keep while under evaluation (2026-10-04).

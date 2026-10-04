@@ -28,14 +28,14 @@ Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters 
 
 - **No LLM on newsletter body** — parsing is library-only (Req 8/15)
 - **All I/O injected** — modules never make live network calls directly; collaborators passed in
-- **TDD** — tests written before production code; Sourcery review + Claude review skills gate on every merge (see docs/requirements.md)
+- **TDD** — tests written before production code; Claude Code review skills before every PR; Sourcery + CodeRabbit (under evaluation) review server-side (see docs/requirements.md)
 - **Surgical changes** — touch only what the task requires; don't refactor adjacent code
 
 ## Dev loop
 
 ```
 uv run pytest          # full suite (310 tests)
-/code-review           # Claude review skill before requesting approval; Sourcery reviews the PR automatically
+/code-review           # Claude review skill before opening/updating a PR; Sourcery + CodeRabbit review the PR
 git push / gh pr       # via HTTPS (SSH port 22 blocked on some networks)
 ```
 
