@@ -8,11 +8,18 @@
 > - Transactional email: Postmark replaced by **Resend** (see "Transactional Email Provider — Resend").
 > - Ingestion: RSS is the primary path for public newsletters (shipped in SAT-330); paid newsletters
 >   are under design exploration — see [`design/ingestion-rss-and-proxy-inbox.md`](design/ingestion-rss-and-proxy-inbox.md).
->   Requirements 1, 6, 9, 13 and the "Gmail Label Gesture" section are **under review** as a result.
+>   Requirements 1, 6, 9, 13 are **under review** as a result.
+> - **Gmail path removed** (decision 2026-10-04). No Gmail OAuth, no label gesture. Paid newsletters will arrive
+>   by private feed or inbound email (Resend), not by reading the customer's mailbox. Testing uses the production path.
+> - **Output:** EPUB delivered to Kindle is the primary product. PDF is secondary (not in scope now).
+>   Reading-surface design (Kindle e-ink, Kindle iOS/Mac apps, Apple Books) — see
+>   [`design/reading-experience.md`](design/reading-experience.md).
 
 ## Goal
 
 Build a functional personal tool quickly (MVP for own use first), but design it so that hosting it and charging external customers later is straightforward — no rewrite required.
+
+**Primary user:** a Substack reader who wants a better reading experience than the inbox or the Substack app — distraction-free, offline, on Kindle (e-ink and the Kindle apps on iOS / laptop). **Primary output:** one EPUB per job, sent to Kindle. PDF is secondary.
 
 ---
 
@@ -20,7 +27,7 @@ Build a functional personal tool quickly (MVP for own use first), but design it 
 
 |Name|Role|Scope|
 |---|---|---|
-|recipient_email|Customer's personal inbox — newsletters arrive here. Originally read via Gmail read-only OAuth; see design exploration for the proxy-inbox alternative|Per-customer|
+|recipient_email|Customer's personal inbox — newsletters arrive here. The service does **not** read it (Gmail path removed); see the design exploration for private feeds / proxy address|Per-customer|
 |kindle_email|The `@kindle.com` address — tool SENDS the EPUB here|Per-customer|
 |whitelist_email|Verified transactional sending address — the FROM address that sends EPUBs; must be on each customer's Amazon approved-sender list|Shared (one for all customers)|
 
@@ -32,7 +39,7 @@ A fourth address is proposed by the design exploration: **proxy_email** — a pe
 
 ## Functional Requirements
 
-1. *(Under review — see design exploration.)* Read the full text of newsletters. Public newsletters: from their RSS feed. Paid newsletters: originally from the customer's Gmail via read-only OAuth; proposed replacement is a per-customer Resend inbound address.
+1. *(Under review — see design exploration.)* Read the full text of newsletters. Public newsletters: from their RSS feed. Paid newsletters: private feed or a per-customer Resend inbound address (proposed). The service does not read the customer's mailbox.
 2. Format newsletters in a readable font and output as EPUB.
 3. Track each newsletter by a unique reference ID.
 4. Track each newsletter's sending address.
@@ -45,11 +52,11 @@ A fourth address is proposed by the design exploration: **proxy_email** — a pe
     *Note:* the RSS path keys on the item `<guid>`, which has no sender email. If RSS and email ingestion coexist, the same post must map to one ID across both channels — see design exploration, "Identity across channels".
 7. The process should run automatically on a fixed schedule (e.g. daily/weekly).
 8. The LLM does NOT process the actual body text of newsletters — that would make cost scale with newsletter length and volume. Body conversion (HTML → Markdown → EPUB) is done deterministically with libraries, not the model. Any LLM use is confined to small, bounded metadata tasks. As a result, token / processing cost per run is roughly constant and does not scale with the size of the newsletters.
-9. *(Under review.)* Make it easy for another person to onboard: connect their newsletter source (RSS feeds and, for paid newsletters, Gmail OAuth or a proxy address) and add their Kindle address (multi-user-ready).
+9. *(Under review.)* Make it easy for another person to onboard: add their publications (RSS feeds; for paid newsletters, a private feed URL or proxy address) and their Kindle address (multi-user-ready).
 10. Use the simplest available billing service to charge users for the service (productization phase — not part of the MVP).
 11. Be able to define a start and end period for newsletters so that historical issues can be backfilled.
 12. Notify the user by email when a new update is available/viewable on their Kindle.
-13. *(Under review — depends on whether Gmail OAuth is retained.)* When Amazon's "approved sender" authorization email arrives in recipient_email, the agent reads it and follows the approval link so the Kindle is cleared to receive documents from whitelist_email. See the safety constraint below.
+13. *(Under review — Gmail path removed.)* The Amazon "approved sender" email goes to the customer's Amazon account email, which the service no longer reads. Default: the customer confirms it themselves, and the "send test document" step verifies the chain. Auto-following the link is only possible if that email reaches a proxy address; the safety constraint below then applies.
 14. When the full (multi-issue) EPUB is received, it contains a table of contents listing the included newsletters.
 15. When an email is parsed, it is stored as Markdown so it can be easily retrieved at any time.
 16. Support an on-demand backfill process that finds older newsletters within an explicit start and end date.
@@ -82,7 +89,7 @@ The same constraint applies to any other confirmation email the service receives
 
 ## OAuth Scope — Read-Only
 
-*(Applies only while the Gmail path exists. The RSS path needs no OAuth.)*
+*(**Removed 2026-10-04** with the Gmail path. Kept for history; the service holds no mailbox OAuth.)*
 
 - The tool uses Gmail read-only OAuth scope. It never modifies the customer's mailbox (no label changes, no archiving, no deletion).
 - Because the tool cannot remove labels, processed-state must NOT be tracked via Gmail labels (see below).
@@ -92,7 +99,7 @@ The same constraint applies to any other confirmation email the service receives
 
 ## Newsletter Identification — Gmail Label Gesture
 
-*(Gmail path only — dormant since SAT-330. On the RSS path, approved sources are the feed URLs in the feeds registry.)*
+*(**Removed 2026-10-04** with the Gmail path. Approved sources are the feed URLs in the feeds registry; on the inbound-email path, approved sender addresses per proxy address.)*
 
 The tool must distinguish newsletters from the rest of a personal inbox.
 
@@ -119,9 +126,9 @@ Stored as data from day one — one row in the MVP, scalable to many customers.
 |Field|Description|
 |---|---|
 |recipient_email|Customer's personal inbox|
-|gmail_oauth_token|OAuth credential (read-only scope) for recipient_email — Gmail path only|
+|~~gmail_oauth_token~~|Removed with the Gmail path|
 |kindle_email|Customer's Kindle address, e.g. `xxxx@kindle.com`|
-|newsletter_label|Gmail label used for the sender-registration gesture (e.g. +Newsletter) — Gmail path only|
+|~~newsletter_label~~|Removed with the Gmail path|
 |approved_sources|Approved newsletter sources (RSS feed URLs; sender addresses on the email path)|
 |whitelisting_status|confirmed / unconfirmed (Amazon approved-sender check)|
 |proxy_email|*(Proposed)* per-customer inbound address on our Resend domain|
@@ -138,7 +145,7 @@ Stored as data from day one — one row in the MVP, scalable to many customers.
     - the Approved Personal Document E-mail List (where whitelist_email goes)
 5. During this onboarding window, the agent watches for and follows the Amazon approval email (requirement 13, subject to its safety constraint).
 6. Tool offers a "send test document" action to verify the full chain end-to-end before any scheduled run is enabled.
-7. Customer registers approved sources (feed URLs, or the Gmail label gesture on the Gmail path).
+7. Customer registers approved sources (feed URLs; private feed URLs or proxy-address senders for paid newsletters).
 
 ---
 
