@@ -1,6 +1,6 @@
 """Tests for the free-Substack RSS → JobSection fetch pipeline (SAT-330).
 
-The RSS fetch layer replaces the Gmail path for free Substacks: each approved
+The RSS fetch layer is the ingestion path for free Substacks: each approved
 source is a canonical RSS feed URL. We fetch the feed, parse its items, filter
 to the [window_start, window_end] window by each item's ``pubDate``, convert the
 item's content HTML to Markdown via the existing deterministic parser, and
@@ -179,7 +179,7 @@ def test_fetch_posts_isolates_one_bad_feed_from_the_rest():
 
 
 def test_fetch_posts_rejects_empty_feed_urls():
-    # An empty feed list is a misconfiguration, mirroring the Gmail fetch guard:
+    # An empty feed list is a misconfiguration:
     # refuse rather than silently producing an empty digest.
     with pytest.raises(ValueError, match="feed_urls"):
         fetch_posts(

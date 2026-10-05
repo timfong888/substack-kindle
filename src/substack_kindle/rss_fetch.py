@@ -1,6 +1,6 @@
 """Free-Substack RSS → JobSection fetch pipeline (SAT-330).
 
-Replaces the Gmail fetch path for free Substacks. Each approved source is a
+Production ingestion path for free Substacks. Each approved source is a
 canonical RSS feed URL (e.g. ``https://<pub>.substack.com/feed``). We fetch the
 feed, parse its items, filter to the ``[window_start, window_end]`` window by
 each item's ``pubDate``, and convert the item's content HTML to Markdown via the
@@ -115,7 +115,7 @@ def fetch_posts(
     ``pubDate``) are dropped.
 
     An empty ``feed_urls`` is treated as a misconfiguration: we refuse rather
-    than silently producing an empty digest (mirrors the Gmail fetch guard).
+    than silently producing an empty digest.
     """
     if not feed_urls:
         raise ValueError("feed_urls must not be empty")

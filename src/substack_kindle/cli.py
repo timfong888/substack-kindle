@@ -4,8 +4,8 @@ Wires the existing modules into a single per-run command:
 
     uv run substack-kindle --start 2026-06-14 --end 2026-06-24
 
-Ingestion is via each free Substack's canonical RSS feed (SAT-330) — there is no
-Gmail/OAuth dependency on this path. Approved sources are full RSS feed URLs read
+Ingestion is via each free Substack's canonical RSS feed (SAT-330). Approved
+sources are full RSS feed URLs read
 from a feed registry (``feeds.json``).
 
 Required env (matching ``runner.load_runtime_config`` plus a kindle target):
