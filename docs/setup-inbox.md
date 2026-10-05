@@ -5,6 +5,14 @@ What the owner does once to bring up the sign-up and proxy-inbox stack in `web/`
 here is in the repo: every value below is a secret or deployment-specific, so it
 goes into the Clerk, Convex, Resend and Vercel dashboards, never into git.
 
+**Dashboards (open these in order):**
+1. Convex: <https://dashboard.convex.dev>: create the project, then Settings → Deploy Keys / Environment Variables
+2. Clerk: <https://dashboard.clerk.com>: create the app, Integrations → Convex, Webhooks
+3. Resend receiving address: <https://resend.com/emails/receiving>
+4. Resend webhooks: <https://resend.com/webhooks>
+5. Resend API keys: <https://resend.com/api-keys>
+6. Vercel new project: <https://vercel.com/new>: import `timfong888/substack-kindle`, Root Directory `web`
+
 `<deployment>` below is your Convex deployment name (e.g. `happy-otter-123`).
 Webhooks go to the `.convex.site` host, not `.convex.cloud`.
 
