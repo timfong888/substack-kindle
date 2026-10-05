@@ -1,6 +1,8 @@
 # substack-kindle
 
-Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters from Gmail, builds a single EPUB per daily window, delivers via Postmark to the user's Kindle address.
+Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters from Gmail, builds a single EPUB per daily window, delivers via Postmark to the user's Kindle address (decided: migrating to Resend — see `docs/requirements.md`).
+
+**Requirements and design docs:** [`docs/`](docs/README.md) — read `docs/requirements.md` before feature work.
 
 ## Stack
 
@@ -8,7 +10,7 @@ Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters 
 - `ebooklib` — EPUB assembly
 - `markdownify` + `BeautifulSoup` — HTML → Markdown parsing
 - `python-markdown` with `extra` extension — Markdown → XHTML
-- Postmark REST API — email delivery (attachment, not MCP)
+- Postmark REST API — email delivery (attachment, not MCP); **Resend replaces it** (migration pending, see `docs/requirements.md`)
 - Gmail MCP (`mcp__claude_ai_Gmail__*`) — newsletter fetch at run time
 - Linear team: **Satchel** (`SAT-*` ticket prefix)
 - Repo: `~/development/substack-kindle`
@@ -26,18 +28,18 @@ Gmail → EPUB → Kindle newsletter digest service. Reads approved newsletters 
 
 - **No LLM on newsletter body** — parsing is library-only (Req 8/15)
 - **All I/O injected** — modules never make live network calls directly; collaborators passed in
-- **TDD** — tests written before production code; CodeRabbit gate on every merge
+- **TDD** — tests written before production code; Claude Code review skills before every PR; Sourcery + CodeRabbit (under evaluation) review server-side (see docs/requirements.md)
 - **Surgical changes** — touch only what the task requires; don't refactor adjacent code
 
 ## Dev loop
 
 ```
 uv run pytest          # full suite (310 tests)
-coderabbit review      # gate before merge
+/code-review           # Claude review skill before opening/updating a PR; Sourcery + CodeRabbit review the PR
 git push / gh pr       # via HTTPS (SSH port 22 blocked on some networks)
 ```
 
-Secrets live in `.env` (gitignored): `POSTMARK_SERVER_TOKEN`, `WHITELIST_EMAIL`, `KINDLE_EMAIL`.
+Secrets live in `.env` (gitignored): `POSTMARK_SERVER_TOKEN`, `WHITELIST_EMAIL`, `KINDLE_EMAIL`. (`RESEND_API_KEY` replaces `POSTMARK_SERVER_TOKEN` once the Resend migration lands.)
 
 ## Karpathy coding guidelines
 
