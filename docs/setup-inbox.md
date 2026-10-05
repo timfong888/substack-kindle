@@ -6,7 +6,7 @@ here is in the repo: every value below is a secret or deployment-specific, so it
 goes into the Clerk, Convex, Resend and Vercel dashboards, never into git.
 
 **Dashboards (open these in order):**
-1. Convex: <https://dashboard.convex.dev>: create the project, then Settings → Deploy Keys / Environment Variables
+1. Convex: <https://dashboard.convex.dev>: create the project, switch the deployment selector to **Production**, then that deployment's Settings → URL & Deploy Key / Environment Variables
 2. Clerk: <https://dashboard.clerk.com>: create the app, Integrations → Convex, Webhooks
 3. Resend receiving address: <https://resend.com/emails/receiving>
 4. Resend webhooks: <https://resend.com/webhooks>
@@ -19,11 +19,15 @@ Webhooks go to the `.convex.site` host, not `.convex.cloud`.
 ### No-terminal route
 
 Every step below can be done in the four dashboards, with no local CLI:
-- **Convex:** create the project in the dashboard, then Settings → **Deploy Keys** →
-  generate a Production deploy key. Set step 4's variables under Settings →
-  **Environment Variables** instead of `npx convex env set`.
+- **Convex:** create the project in the dashboard. Switch the deployment selector at the top to
+  **Production**, then open that deployment's **Settings → URL & Deploy Key → Generate Production
+  Deploy Key**. (Project-level settings only offer *Preview* deploy keys; don't use those here.
+  They create a separate deployment per branch with its own URL and empty env vars, so the
+  webhooks would never reach it.) Set step 4's variables on the same Production deployment
+  under **Settings → Environment Variables** instead of `npx convex env set`.
 - **Vercel** deploys the Convex functions on every build: set the build command to
-  `npx convex deploy --cmd 'npm run build'` and add `CONVEX_DEPLOY_KEY`.
+  `npx convex deploy --cmd 'npm run build'` and add the Production key as `CONVEX_DEPLOY_KEY`
+  for **both Production and Preview** environments.
   `NEXT_PUBLIC_CONVEX_URL` is then set automatically during the build.
 - Until this PR merges, deploy the `feat/convex-clerk-resend-inbox` branch (a Vercel
   preview deployment) for the smoke test.
