@@ -34,3 +34,12 @@ htmlcov/
 # Build artifacts
 *.epub
 *.zip
+
+# Web app (web/) — .env* is already ignored above, with !.env.example kept
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
+web/.vercel/
+web/.env*
+!web/.env.example
