@@ -57,7 +57,8 @@ def _row_to_message(row: dict[str, Any]) -> InboundMessage:
             # rather than an empty body the handler would silently skip.
             body = "<p>This issue was too large to include. Read it in your email or online.</p>"
         else:
-            body = ""
+            # No body at all (e.g. image-only email): same reason, stay visible.
+            body = "<p>This issue has no readable text. Read it in your email or online.</p>"
     return InboundMessage(
         sender=row["from"],
         subject=row["subject"],

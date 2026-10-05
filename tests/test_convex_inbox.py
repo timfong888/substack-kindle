@@ -163,14 +163,6 @@ def test_html_missing_falls_back_to_escaped_text():
     assert msg.html_body == "<pre>a &lt; b &amp; c</pre>"
 
 
-def test_no_body_at_all_yields_empty_html():
-    client = FakeClient([_row(html=None, text=None)])
-    [msg] = fetch_inbound(
-        client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET
-    )
-    assert msg.html_body == ""
-
-
 def test_non_utc_window_is_converted_to_epoch_millis():
     plus8 = timezone(timedelta(hours=8))
     client = FakeClient([])
@@ -224,6 +216,16 @@ def test_both_bodies_dropped_for_size_yield_visible_placeholder():
         client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET
     )
     assert "too large" in msg.html_body
+    assert msg.subject == "Weekly issue"
+
+
+def test_stored_email_with_no_body_at_all_gets_visible_placeholder():
+    # e.g. an image-only email: no html, no text, no truncation flag.
+    client = FakeClient([_row(html=None, text=None)])
+    [msg] = fetch_inbound(
+        client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET
+    )
+    assert "no readable text" in msg.html_body
     assert msg.subject == "Weekly issue"
 
 
