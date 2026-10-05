@@ -97,12 +97,16 @@ export const listInboundForWindow = query({
     if (user === null) return [];
     const rows = await ctx.db
       .query("receivedEmails")
-      .withIndex("byUserAndReceivedAt", (q) =>
-        q.eq("userId", user._id).gte("receivedAt", start).lt("receivedAt", end),
+      .withIndex("byUserKindAndReceivedAt", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("kind", "newsletter")
+          .gte("receivedAt", start)
+          .lt("receivedAt", end),
       )
       .collect();
     return rows
-      .filter((r) => r.kind === "newsletter" && r.bodyStatus === "stored")
+      .filter((r) => r.bodyStatus === "stored")
       .map((r) => ({
         resendEmailId: r.resendEmailId,
         messageId: r.messageId ?? null,
