@@ -2,11 +2,11 @@
 
 Unlike ``test_e2e_serverless.py`` — which exercises the pipeline with a mocked
 Postmark and synthetic HTML — this test drives the REAL ``cli.main`` with no
-injected seams: real Gmail OAuth read, real EPUB build, real Postmark send to
+injected seams: real RSS feed fetch, real EPUB build, real Postmark send to
 the real Kindle address configured in ``.env``. It is the "does my actual
 account work end to end" check.
 
-Because it reads live Gmail and sends a real email, it is GATED: it only runs
+Because it fetches live feeds and sends a real email, it is GATED: it only runs
 when ``RUN_LIVE_E2E=1`` is set, so the default ``uv run pytest`` suite stays
 fully offline.
 
@@ -18,12 +18,11 @@ Optional window override (defaults to the last 7 days):
         uv run pytest tests/test_e2e_live_account.py -s
 
 Credentials come from the process environment, never the repo. A remote agent
-(CI, cloud runner) injects the secrets as env vars and points at materialized
-credential files:
+(CI, cloud runner) injects the secrets as env vars and points at a materialized
+feed registry:
 
     POSTMARK_SERVER_TOKEN, WHITELIST_EMAIL, KINDLE_EMAIL  # injected secrets
-    GMAIL_BUNDLE_PATH        # dir with client_secret.json + credentials.json
-    APPROVED_SOURCES_PATH    # approved senders JSON
+    FEEDS_PATH               # feed registry JSON ({"feeds": [...]})
 
 Locally, a gitignored ``.env`` overlays the environment for convenience. This
 file holds no secrets, so it is safe to commit and run anywhere the credentials
@@ -81,11 +80,11 @@ def _default_window() -> tuple[str, str]:
     os.environ.get("RUN_LIVE_E2E") != "1",
     reason=(
         "live account e2e is opt-in; set RUN_LIVE_E2E=1 to run "
-        "(reads Gmail, sends a real email)"
+        "(fetches live RSS feeds, sends a real email)"
     ),
 )
 def test_live_account_delivers_digest_to_kindle(tmp_path, capsys):
-    """Real Gmail → EPUB → Postmark send to the configured Kindle address."""
+    """Real RSS → EPUB → Postmark send to the configured Kindle address."""
     env = _resolve_env()
     missing = [k for k in _REQUIRED_ENV if not env.get(k)]
     if missing:

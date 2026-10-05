@@ -11,8 +11,7 @@ reviews:
     - path: "**/*.py"
       instructions: >
         Enforce the project's security policy (public repo — no secrets): flag any
-        hardcoded credentials, tokens, or per-customer config. Verify the read-only
-        Gmail scope is never violated (no mutating Gmail calls). Confirm new pipeline
+        hardcoded credentials, tokens, or per-customer config. Confirm new pipeline
         code keeps body parsing free of LLM calls (Req 8). Require tests for new
         behavior (TDD) — flag new behavior that ships without a corresponding test.
 chat:

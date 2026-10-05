@@ -1,9 +1,9 @@
 """Processed-state store (SAT-239 / Req 17, SAT-284).
 
 Service-side record of which newsletters have been parsed/delivered, keyed by the
-Req-6 newsletter ID (with optional secondary lookup by Gmail message-id). This is
+Req-6 newsletter ID (with optional secondary lookup by source message-id). This is
 the dedup substrate read by backfill dedup (D3); it is deliberately independent of
-Gmail labels and of the Kindle — neither is the source of truth for delivery.
+the ingestion source and of the Kindle — neither is the source of truth for delivery.
 
 SAT-284 adds:
 - ``ProcessedStateStore`` — runtime-checkable Protocol; the seam for swapping backends.
@@ -33,7 +33,7 @@ class ProcessedState(enum.Enum):
 class _Record:
     newsletter_id: str
     state: ProcessedState
-    gmail_message_id: str | None = None
+    message_id: str | None = None
     delivered_at: datetime | None = None
 
 
@@ -44,22 +44,22 @@ class InMemoryProcessedStateStore:
         self._by_id: dict[str, _Record] = {}
         self._delivered_message_ids: set[str] = set()
 
-    def mark_parsed(self, newsletter_id: str, *, gmail_message_id: str | None = None) -> None:
+    def mark_parsed(self, newsletter_id: str, *, message_id: str | None = None) -> None:
         record = self._by_id.get(newsletter_id)
         if record is None:
             self._by_id[newsletter_id] = _Record(
                 newsletter_id=newsletter_id,
                 state=ProcessedState.PARSED,
-                gmail_message_id=gmail_message_id,
+                message_id=message_id,
             )
-        elif gmail_message_id is not None:
-            record.gmail_message_id = gmail_message_id
+        elif message_id is not None:
+            record.message_id = message_id
 
     def mark_delivered(
         self,
         newsletter_id: str,
         *,
-        gmail_message_id: str | None = None,
+        message_id: str | None = None,
         delivered_at: datetime | None = None,
     ) -> None:
         record = self._by_id.get(newsletter_id)
@@ -67,15 +67,15 @@ class InMemoryProcessedStateStore:
             record = _Record(newsletter_id=newsletter_id, state=ProcessedState.DELIVERED)
             self._by_id[newsletter_id] = record
         record.state = ProcessedState.DELIVERED
-        if gmail_message_id is not None and gmail_message_id != record.gmail_message_id:
+        if message_id is not None and message_id != record.message_id:
             # Drop a superseded message-id so it is not a stale "delivered" false positive.
-            if record.gmail_message_id is not None:
-                self._delivered_message_ids.discard(record.gmail_message_id)
-            record.gmail_message_id = gmail_message_id
+            if record.message_id is not None:
+                self._delivered_message_ids.discard(record.message_id)
+            record.message_id = message_id
         if delivered_at is not None:
             record.delivered_at = delivered_at
-        if record.gmail_message_id is not None:
-            self._delivered_message_ids.add(record.gmail_message_id)
+        if record.message_id is not None:
+            self._delivered_message_ids.add(record.message_id)
 
     def state_of(self, newsletter_id: str) -> ProcessedState | None:
         record = self._by_id.get(newsletter_id)
@@ -89,8 +89,8 @@ class InMemoryProcessedStateStore:
         record = self._by_id.get(newsletter_id)
         return record is not None and record.state is ProcessedState.DELIVERED
 
-    def is_message_delivered(self, gmail_message_id: str) -> bool:
-        return gmail_message_id in self._delivered_message_ids
+    def is_message_delivered(self, message_id: str) -> bool:
+        return message_id in self._delivered_message_ids
 
     def delivered_at(self, newsletter_id: str) -> datetime | None:
         record = self._by_id.get(newsletter_id)

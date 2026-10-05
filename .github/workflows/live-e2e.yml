@@ -1,21 +1,18 @@
 # Manual-only live account end-to-end check.
 #
-# Runs tests/test_e2e_live_account.py against the REAL account: it reads live
-# Gmail and SENDS A REAL EPUB to the configured Kindle address. Never runs on
+# Runs tests/test_e2e_live_account.py against the REAL account: it fetches the
+# live RSS feeds in the registry and SENDS A REAL EPUB to the configured Kindle address. Never runs on
 # push/PR — only via the "Run workflow" button (workflow_dispatch).
 #
 # Required repository secrets:
 #   POSTMARK_SERVER_TOKEN      Postmark server token
 #   WHITELIST_EMAIL            verified Postmark sender (distinct local-part)
 #   KINDLE_EMAIL               Kindle delivery address
-#   GMAIL_CLIENT_SECRET        full contents of the OAuth client_secret.json
-#   GMAIL_CREDENTIALS          full contents of the cached credentials.json
-#                              (must hold a valid refresh_token — CI cannot do
-#                              the interactive OAuth flow)
-#   APPROVED_SOURCES           full contents of approved_sources.json
+#   FEEDS_JSON                 full contents of feeds.json
+#                              ({"feeds": ["https://<pub>.substack.com/feed", ...]})
 #
-# Credential files are materialized under $RUNNER_TEMP (ephemeral, never the
-# workspace) so nothing secret is committed or uploaded.
+# The feed registry is materialized under $RUNNER_TEMP (ephemeral, never the
+# workspace) so nothing private is committed or uploaded.
 
 name: live-e2e (real Kindle send)
 
@@ -52,29 +49,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e . --group dev
 
-      - name: Materialize credential files
+      - name: Materialize feed registry
         env:
-          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
-          GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
-          APPROVED_SOURCES: ${{ secrets.APPROVED_SOURCES }}
+          FEEDS_JSON: ${{ secrets.FEEDS_JSON }}
         run: |
-          mkdir -p "$RUNNER_TEMP/gmail"
-          printf '%s' "$GMAIL_CLIENT_SECRET" > "$RUNNER_TEMP/gmail/client_secret.json"
-          printf '%s' "$GMAIL_CREDENTIALS" > "$RUNNER_TEMP/gmail/credentials.json"
-          printf '%s' "$APPROVED_SOURCES" > "$RUNNER_TEMP/approved_sources.json"
+          printf '%s' "$FEEDS_JSON" > "$RUNNER_TEMP/feeds.json"
 
-      - name: Live e2e (real Gmail read + real Postmark send to Kindle)
+      - name: Live e2e (real RSS fetch + real Postmark send to Kindle)
         env:
           RUN_LIVE_E2E: "1"
           POSTMARK_SERVER_TOKEN: ${{ secrets.POSTMARK_SERVER_TOKEN }}
           WHITELIST_EMAIL: ${{ secrets.WHITELIST_EMAIL }}
           KINDLE_EMAIL: ${{ secrets.KINDLE_EMAIL }}
-          GMAIL_BUNDLE_PATH: ${{ runner.temp }}/gmail
-          APPROVED_SOURCES_PATH: ${{ runner.temp }}/approved_sources.json
+          FEEDS_PATH: ${{ runner.temp }}/feeds.json
           LIVE_E2E_START: ${{ inputs.start }}
           LIVE_E2E_END: ${{ inputs.end }}
         run: pytest tests/test_e2e_live_account.py -s
 
-      - name: Scrub credential files
+      - name: Scrub feed registry
         if: always()
-        run: rm -rf "$RUNNER_TEMP/gmail" "$RUNNER_TEMP/approved_sources.json"
+        run: rm -f "$RUNNER_TEMP/feeds.json"

@@ -1,8 +1,8 @@
 """Tests for the processed-state store (SAT-239 / #3, Req 17).
 
 Acceptance:
-- State keyed by the Req-6 newsletter ID (and/or Gmail message-id), in the
-  service datastore — NOT Gmail labels.
+- State keyed by the Req-6 newsletter ID (and/or source message-id), in the
+  service datastore.
 - "Has this newsletter been delivered?" returns correct true/false.
 - Backfill dedup (D3) reads from this same store (delivered_ids / filter helpers).
 """
@@ -62,19 +62,19 @@ def test_records_delivered_timestamp():
     assert store.delivered_at("nl-1") == when
 
 
-def test_secondary_lookup_by_gmail_message_id():
+def test_secondary_lookup_by_message_id():
     store = InMemoryProcessedStateStore()
-    store.mark_delivered("nl-1", gmail_message_id="gmail-abc")
-    assert store.is_message_delivered("gmail-abc") is True
-    assert store.is_message_delivered("gmail-xyz") is False
+    store.mark_delivered("nl-1", message_id="msg-abc")
+    assert store.is_message_delivered("msg-abc") is True
+    assert store.is_message_delivered("msg-xyz") is False
 
 
-def test_superseded_gmail_message_id_is_not_a_stale_positive():
+def test_superseded_message_id_is_not_a_stale_positive():
     store = InMemoryProcessedStateStore()
-    store.mark_delivered("nl-1", gmail_message_id="gmail-old")
-    store.mark_delivered("nl-1", gmail_message_id="gmail-new")
-    assert store.is_message_delivered("gmail-new") is True
-    assert store.is_message_delivered("gmail-old") is False
+    store.mark_delivered("nl-1", message_id="msg-old")
+    store.mark_delivered("nl-1", message_id="msg-new")
+    assert store.is_message_delivered("msg-new") is True
+    assert store.is_message_delivered("msg-old") is False
 
 
 def test_delivered_ids_returns_only_delivered():
@@ -99,17 +99,6 @@ def test_filter_undelivered_preserves_order_and_dups_input_unchanged():
     candidates = ["nl-3", "nl-2", "nl-1"]
     assert store.filter_undelivered(candidates) == ["nl-3", "nl-1"]
     assert candidates == ["nl-3", "nl-2", "nl-1"]
-
-
-def test_no_gmail_coupling_in_module():
-    # The store is service-side state, never Gmail labels: it must not import Gmail/Google clients.
-    import substack_kindle.processed_state as mod
-
-    with open(mod.__file__) as fh:
-        text = fh.read().lower()
-    assert "googleapiclient" not in text
-    assert "from google" not in text
-    assert "import google" not in text
 
 
 @pytest.mark.parametrize("nid", ["", "nl-1", "a" * 64])

@@ -1,11 +1,10 @@
 """Tests for the per-customer config store (SAT-237 / #1).
 
 Acceptance:
-- Config holds recipient_email, gmail_oauth_token (ref, not raw), kindle_email,
-  newsletter_label, approved_sources[], whitelisting_status (confirmed/unconfirmed).
+- Config holds recipient_email, kindle_email, approved_sources[],
+  whitelisting_status (confirmed/unconfirmed).
 - whitelist_email is NOT stored per customer (single shared system value).
 - Reads/writes are keyed by customer; two customers' rows never collide.
-- No secret values appear in logs / repr.
 """
 
 import dataclasses
@@ -22,10 +21,8 @@ from substack_kindle.config_store import (
 def make_config(customer_id="cust-1", **overrides):
     base = dict(
         customer_id=customer_id,
-        recipient_email=f"{customer_id}@gmail.com",
+        recipient_email=f"{customer_id}@example.com",
         kindle_email=f"{customer_id}@kindle.com",
-        newsletter_label="Newsletters",
-        gmail_oauth_token_ref=f"secretref://gmail/{customer_id}",
     )
     base.update(overrides)
     return CustomerConfig(**base)
@@ -36,22 +33,12 @@ def test_config_holds_required_fields():
     field_names = {f.name for f in dataclasses.fields(cfg)}
     assert {
         "recipient_email",
-        "gmail_oauth_token_ref",
         "kindle_email",
-        "newsletter_label",
         "approved_sources",
         "whitelisting_status",
     } <= field_names
     assert cfg.approved_sources == []
     assert cfg.whitelisting_status == "unconfirmed"
-
-
-def test_no_raw_token_field_only_a_reference():
-    cfg = make_config()
-    field_names = {f.name for f in dataclasses.fields(cfg)}
-    # The raw token must never be a stored field; only an opaque reference is.
-    assert "gmail_oauth_token" not in field_names
-    assert "gmail_oauth_token_ref" in field_names
 
 
 def test_whitelisting_status_must_be_valid():
@@ -83,20 +70,14 @@ def test_shared_whitelist_email_missing_raises(monkeypatch):
         shared_whitelist_email()
 
 
-def test_repr_does_not_leak_token_ref():
-    cfg = make_config(gmail_oauth_token_ref="secretref://super/secret/value")
-    assert "super/secret/value" not in repr(cfg)
-    assert "redacted" in repr(cfg).lower()
-
-
 def test_store_is_keyed_by_customer_no_collision():
     store = InMemoryConfigStore()
     a = make_config(customer_id="alice")
-    b = make_config(customer_id="bob", newsletter_label="Reads")
+    b = make_config(customer_id="bob", kindle_email="bob-reader@kindle.com")
     store.put(a)
     store.put(b)
-    assert store.get("alice").newsletter_label == "Newsletters"
-    assert store.get("bob").newsletter_label == "Reads"
+    assert store.get("alice").kindle_email == "alice@kindle.com"
+    assert store.get("bob").kindle_email == "bob-reader@kindle.com"
     assert len(store) == 2
 
 

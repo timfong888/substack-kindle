@@ -1,8 +1,8 @@
 """Serverless entry point: process pre-fetched messages through the full pipeline.
 
 This module is the composition root for serverless deployments (AWS Lambda,
-GCP Cloud Run, launchd, etc.). It accepts pre-fetched message data — no Gmail
-OAuth dependency — and runs the full parse → build → send pipeline. All I/O
+GCP Cloud Run, launchd, etc.). It accepts pre-fetched message data (e.g. from
+an inbound-email webhook) and runs the full parse → build → send pipeline. All I/O
 is injected so the function is fully testable without live network calls.
 
 Usage:
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .fetch import sender_display_name
+from .email_headers import sender_display_name
 from .ids import newsletter_id as _newsletter_id
 from .job_epub import JobSection, build_job_epub
 from .parsing import html_to_markdown
@@ -40,7 +40,7 @@ from .processed_state import ProcessedStateStore
 
 @dataclass(frozen=True)
 class InboundMessage:
-    """Pre-fetched message ready for processing — no Gmail/OAuth dependency."""
+    """Pre-fetched message ready for processing (provider-neutral)."""
 
     sender: str
     subject: str

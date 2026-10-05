@@ -3,7 +3,7 @@
 Proves ``cli.main`` threads env config + dates through the pipeline with the
 real composition of collaborators — RSS fetch → dedup → build_epub → postmark
 send — using injected fakes for the RSS fetch and the HTTP transport. No live
-network calls, no Gmail/OAuth (the free-Substack path ingests via RSS feeds).
+network calls (the free-Substack path ingests via RSS feeds).
 """
 
 
