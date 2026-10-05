@@ -35,6 +35,9 @@ publication; the existing RSS pipeline handles it.
 - Cost: zero marginal infra. Reuses `rss_fetch.py`.
 - Changes: the SSRF allowlist in `cli.py` (`_validate_feed_url`) currently accepts only `https://*.substack.com/feed`; extend it to the
   private-feed shape. Private-feed URLs embed a credential: store them as secrets, never log them.
+  **Prerequisite:** `_validate_feed_url` currently puts the full rejected URL into `InvalidFeedUrlError`, so
+  a malformed private-feed URL would leak its token into logs and tracebacks. Redact the path token and query
+  string from validation errors (with a test) *before* the allowlist accepts credential-bearing URLs.
 - Limits: Substack only. Ghost, beehiiv and others need their own answer (or option B/C). Token revocation and
   rotation are Substack-controlled.
 
@@ -155,12 +158,14 @@ publication, its channel (RSS / private feed / email), last issue received, and 
 
 ## Sign-up and proxy-address flow
 
-### "Sign in with Google" is not Gmail access
+### Sign-in never means Gmail access
 
-Use Google sign-in (OpenID Connect) with scopes `openid email` only. The service receives a verified email address
-(`email`, `email_verified`, a stable `sub` id) and **nothing from the mailbox**. These are non-sensitive scopes, so
-none of the restricted-scope verification or CASA burden that killed the Gmail path applies. Offer an email
-magic link (sent through Resend) as the non-Google alternative.
+**Launch: email magic link only** (via Clerk; see the decisions below). Google sign-in is added later.
+
+When Google is added, request only the basic identity scopes Clerk uses for Google: `openid email profile`.
+The service gets a verified email address (`email`, `email_verified`, a stable `sub` id), plus name and avatar
+from `profile`, and **nothing from the mailbox**. These are non-sensitive scopes, so none of the restricted-scope
+verification or CASA burden that killed the Gmail path applies. Never request any `gmail.*` scope.
 
 ### Auth and platform decisions (2026-10-04)
 
@@ -180,8 +185,8 @@ magic link (sent through Resend) as the non-Google alternative.
 
 ### Flow
 
-1. **Sign in** — "Continue with Google" or "Email me a link". Create the customer row keyed by Google `sub` (or
-   the verified email), storing `recipient_email`.
+1. **Sign in**: "Email me a link" at launch; "Continue with Google" is added later. Create the customer row keyed by
+   the Clerk user id, storing the verified email as `recipient_email`.
 2. **Proxy address is issued immediately** — generate a random, unguessable local part, e.g.
    `tim-7f3k9q@in.<our-domain>`, and store it. No mailbox is provisioned: the inbound subdomain's MX points to
    Resend and every address on it is received (**verify** catch-all). The "inbox" is our own table of received
