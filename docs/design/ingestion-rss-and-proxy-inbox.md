@@ -106,8 +106,11 @@ Required before launch:
 1. **Pass-through without storage.** Login codes and account mail are forwarded and never persisted. Only newsletter
    issues are stored. A breach of our store must not yield Substack login codes.
 2. **Verified sending domain** for forwards, on its own subdomain (C.3). Without it, forwarded login codes land in spam.
-3. **Forward forever.** Pass-through continues after cancellation, because the customer needs the login code to change
-   the email back. Publish an "undo" guide and show it on cancel.
+3. **Bounded exit.** On cancellation we stop storing anything and stop forwarding newsletters at once. Account mail
+   (login codes, email-change confirmations) keeps being forwarded for a **90-day grace period**, because the customer
+   needs a login code to change their Substack email back. The undo guide is shown at cancel, and reminder emails go
+   out at 30, 60 and 85 days. After day 90 the proxy address is disabled and rejects mail. Unbounded forwarding was
+   rejected: it would keep a former customer's personal mail flowing through our systems indefinitely.
 4. **Setting:** "Also send newsletters to my inbox", on by default. Account mail always passes through.
 5. **Writer warning.** For a Substack writer, the account email also receives reader replies and payout mail. Say so
    before they switch.
