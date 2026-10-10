@@ -40,6 +40,13 @@ git push / gh pr       # via HTTPS (SSH port 22 blocked on some networks)
 
 Secrets live in `.env` (gitignored): `POSTMARK_SERVER_TOKEN`, `WHITELIST_EMAIL`, `KINDLE_EMAIL`. (`RESEND_API_KEY` replaces `POSTMARK_SERVER_TOKEN` once the Resend migration lands.)
 
+## Owner instructions (human actions)
+
+Whenever a step needs the owner to act (dashboards, accounts, secrets, merges), give an exact numbered list:
+one action per step, the direct link to the specific page (not just the site), the exact menu path and button
+label, the exact value or variable name to enter, and where it comes from. Never write "configure X" or
+"go to settings". Never ask the owner to paste secrets into chat.
+
 ## Karpathy coding guidelines
 
 This project benefits from the Karpathy guidelines given its clean module boundaries and injected-collaborator design. The skill is available as `andrej-karpathy-skills:karpathy-guidelines`. Apply for any feature work, bug fixes, or multi-file changes. Not required for simple one-line fixes or exploratory queries — use judgment.
