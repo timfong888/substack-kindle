@@ -3,6 +3,10 @@
 > **Status:** Exploration (2026-10-04). Not a requirement yet. Decisions here will amend
 > [`../requirements.md`](../requirements.md) (requirements 1, 6, 9, 13; Gmail sections).
 > Items marked **verify** are unconfirmed claims that must be checked before building on them.
+>
+> **Update 2026-10-10:** onboarding decision reversed. Option C (change the Substack email to the proxy, with full
+> pass-through) is now the **primary** path; see [Decision: pass-through is the primary onboarding](#decision-2026-10-10-pass-through-is-the-primary-onboarding).
+> Costs moved to the Business section of [`../requirements.md`](../requirements.md#business-model-and-unit-costs).
 
 ## Problem
 
@@ -75,7 +79,7 @@ and parse it, then forward a copy to the customer's real address.
 - Upside: it works even where the customer can't create forwarding rules, and it is the only option that
   doesn't depend on any action in the customer's mail client.
 
-### Recommendation
+### Recommendation (superseded 2026-10-10, see the decision below)
 
 Do **A → B → C**, in that order. Prove A with one real paid Substack (an hour of work). If A holds, most paid
 volume is solved with zero infra. Build B for non-Substack paid newsletters. Keep C as a fallback only: its
@@ -84,6 +88,45 @@ failure modes land on the customer's login and inbox, which is the wrong place f
 Note that B and C both make RSS optional. Once all of a customer's newsletter mail reaches the proxy, every issue,
 free or paid, arrives there. RSS remains useful for (a) zero-setup onboarding of free newsletters and (b) backfill:
 feeds carry recent history, while a new proxy address starts with no history.
+
+### Decision (2026-10-10): pass-through is the primary onboarding
+
+Discovery and friction decided it. Option B needs a Gmail forwarding address, a confirmation code and a filter. It is
+desktop-only, and personal Gmail can't be set up by API (the Gmail API creates forwarding addresses only for
+Workspace accounts with domain-wide delegation). Every discovery shortcut is partial: a Substack profile lists only the
+publications the reader chooses to show. Option C is one edit on `substack.com/settings`, works on a phone, and
+captures every subscription, free and paid, with no URL entry.
+
+The login-lockout blind spot (C.1) is handled by **full pass-through**: every non-newsletter email (login codes,
+receipts, replies, payout notices) is forwarded to the customer's real address. Newsletters are forwarded too, by
+default, so the customer's inbox doesn't change.
+
+Required before launch:
+
+1. **Pass-through without storage.** Login codes and account mail are forwarded and never persisted. Only newsletter
+   issues are stored. A breach of our store must not yield Substack login codes.
+2. **Verified sending domain** for forwards, on its own subdomain (C.3). Without it, forwarded login codes land in spam.
+3. **Forward forever.** Pass-through continues after cancellation, because the customer needs the login code to change
+   the email back. Publish an "undo" guide and show it on cancel.
+4. **Setting:** "Also send newsletters to my inbox", on by default. Account mail always passes through.
+5. **Writer warning.** For a Substack writer, the account email also receives reader replies and payout mail. Say so
+   before they switch.
+6. **Classifier:** newsletter vs account mail must be deterministic (headers such as `List-Id`/`List-Unsubscribe`,
+   sender), and must fail open: when unsure, forward and don't store.
+
+Flow:
+
+1. Dashboard shows the proxy address with **Copy** and a button that opens `https://substack.com/settings`.
+2. Customer clicks **Edit** next to **Email**, pastes the proxy, saves.
+3. Substack emails a confirmation to the new address (the proxy) and to the old one (see the API section below).
+   The dashboard shows the proxy-side confirmation immediately; the customer clicks the old-address one in their inbox.
+4. Publications appear on the dashboard as issues arrive, each with an include/exclude toggle for the Kindle digest.
+
+Fallbacks: option B for readers who won't change their Substack email; RSS for free publications added by URL and
+for backfill (a new proxy has no history).
+
+**Verify** with a throwaway Substack account: which confirmations the email change sends, that forwarded login codes
+arrive in Gmail's inbox, and how custom-domain publications are identified in headers.
 
 ## Routing: which source is "paid"?
 
@@ -121,7 +164,7 @@ is the same URL). Fall back to the requirement-6 hash only when no canonical URL
   the proxy becomes an open relay into the customer's Kindle.
 - **Abuse:** treat inbound bodies as untrusted input (existing parser is deterministic and LLM-free, which helps).
 
-## Economics (rough, verify against current Resend pricing)
+## Economics (superseded: see the Business section of requirements.md)
 
 Search-reported pricing (2026): Free 3k emails/mo (100/day); Pro $20/mo for 50k; Scale from $90/mo for 100k.
 Received mail counts against the same quota.
@@ -218,8 +261,9 @@ What *can* be done without a browser: the unofficial per-publication free-subscr
 publication. We don't need this, because free publications come via RSS. It doesn't help paid ones: a paid
 subscription belongs to the account that paid for it.
 
-**Conclusion:** don't automate the Substack email change. Prefer the private feed (5a) or a forward rule (5b),
-both of which leave the customer's Substack account untouched.
+**Conclusion:** don't automate the Substack email change; the customer makes it in the browser. As of 2026-10-10 that
+manual change (5c, with full pass-through) is the primary path. The private feed (5a) and the forward rule (5b) are
+fallbacks for customers who won't change their Substack email.
 
 ## Open questions
 

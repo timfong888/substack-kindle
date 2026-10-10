@@ -3,6 +3,12 @@
 > **Status:** Living document. This is the source of truth for product requirements.
 > Design explorations that may change these requirements live in [`docs/design/`](design/).
 >
+> **Revision 2026-10-10**
+> - Onboarding: the customer changes their Substack account email to their proxy address, with full pass-through
+>   to their real inbox. This is now the primary path; forward rules and RSS are fallbacks. See the decision in
+>   [`design/ingestion-rss-and-proxy-inbox.md`](design/ingestion-rss-and-proxy-inbox.md).
+> - Added "Business model and unit costs" (draft).
+>
 > **Revision 2026-10-04**
 > - Code review: Greptile removed. **Claude Code review skills** are the coding agent's review loop. Sourcery and
 >   CodeRabbit run as server-side PR reviewers; CodeRabbit is kept while under evaluation (see S2/S3).
@@ -171,6 +177,80 @@ Stored as data from day one — one row in the MVP, scalable to many customers.
 ### Superseded: Postmark
 
 Postmark was the original provider (10 MB total message cap; MCP `sendEmail` had no attachment support, so the EPUB used the `/email` REST API directly). Its code is still on `main` until the Resend migration lands.
+
+## Business model and unit costs
+
+> **Status:** Draft (2026-10-10). Resend prices below come from third-party pricing guides that agree with each other;
+> resend.com was not reachable when this was written. **Verify on [resend.com/pricing](https://resend.com/pricing)
+> before quoting.** Other vendor prices are marked **verify**.
+
+### Resend pricing (transactional email)
+
+Resend bills transactional plans on emails **sent and received** per month. Every inbound newsletter counts, as does
+every forward and every Kindle delivery. ([Resend: what is Resend pricing](https://resend.com/docs/knowledge-base/what-is-resend-pricing))
+
+| Plan | Price / month | Included emails | Notes |
+|---|---|---|---|
+| Free | $0 | 3,000 | 100 per day cap, 1 domain. Testing only. |
+| Pro | $20 | 50,000 | No daily cap. Overage $0.90 per 1,000. Higher Pro tiers, e.g. 100,000 for $35. |
+| Scale | from $90 | 100,000 | Dedicated IP option, more domains. Top tier about $1,150 for 2.5M (about $0.46 per 1,000). |
+
+Sources: [Resend pricing](https://resend.com/pricing), [flexprice guide](https://flexprice.io/blog/detailed-resend-pricing-guide),
+[automationatlas](https://automationatlas.io/answers/resend-pricing-explained-2026/), [usecarly](https://www.usecarly.com/blog/resend-pricing/).
+
+### Emails per customer per month
+
+Pass-through onboarding (design doc, decision 2026-10-10). Assumes a daily digest and about 13 issues per publication per month.
+
+| Item | Typical reader (10 publications) | Heavy reader (30 publications) |
+|---|---|---|
+| Newsletters received | 130 | 390 |
+| Account mail received (login codes, receipts) | 10 | 10 |
+| Account mail forwarded to the real inbox | 10 | 10 |
+| Newsletters forwarded to the real inbox ("also send to my inbox", default on) | 130 | 390 |
+| Kindle digests sent | 30 | 30 |
+| **Total, inbox copy on** | **310** | **830** |
+| **Total, Kindle only** | **180** | **440** |
+
+The inbox copy roughly doubles email volume. It is still cheap; keep it on by default for a transparent switch.
+
+### Email cost
+
+| Customers (typical reader, inbox copy on) | Emails / month | Resend plan | Resend cost / month | Per customer |
+|---|---|---|---|---|
+| 10 | 3,100 | Free is not enough (100/day cap) | $20 (Pro) | $2.00 |
+| 160 | ~50,000 | Pro | $20 | $0.13 |
+| 1,000 | ~310,000 | Pro with overage, or a higher tier | $110–$255 | $0.11–$0.26 |
+| 10,000 | ~3.1M | Scale top tier plus overage | about $1,400 | $0.14 |
+
+Email costs **$0.11–$0.30 per customer per month** at any realistic scale. The free plan's 100 per day cap covers
+only about 10 test customers.
+
+### Other costs (verify each)
+
+| Item | Estimate | Note |
+|---|---|---|
+| Payment processing | about $0.42 per $4 charge | Stripe US standard 2.9% + $0.30 (**verify**). The fixed $0.30 is the **largest per-customer cost** at a low monthly price. Annual billing ($40/year) cuts it to about $0.12 per month. |
+| Hosting (Vercel) | $20/month | Vercel Hobby is non-commercial; a paid product needs Pro (**verify**). |
+| Database (Convex) | $0 to start | Free tier first, then the Pro plan (**verify**). Storage: about 13 MB of newsletter HTML per typical customer per month. Keep only Markdown, and purge it after a retention window (for example 30 days). |
+| Auth (Clerk) | $0 to start | Free tier covers early users (**verify** the current monthly-user limit). Production needs an owned domain. |
+| Domain | $10–$20/year | Needed now: verified sending domain for Kindle delivery and pass-through. |
+| Google CASA assessment | $0 | Avoided: no Gmail scopes. |
+
+### Pricing and margin
+
+- Competitors: Inkwell about $4/month, Readbetter free, others (see `design/reading-experience.md`, positioning).
+- At **$4/month**, cost per typical customer is about $0.15 email, $0.42 payment fees, and under $0.10 shared
+  hosting. That is about $0.67, a gross margin of about 83%. On annual billing ($40/year, about $3.33/month) it is about $0.37, or about 89%.
+- Email is not the constraint. The real costs are **payment fees** (favour annual plans), **support** (the pass-through
+  touches login mail, so failures are urgent), and **customer acquisition**.
+- A free tier is affordable: a Kindle-only reader with a weekly digest costs well under $0.10 per month in email.
+
+### Open questions
+
+1. Price point and free tier: free with limits (for example 3 publications, weekly digest), then $4/month or $40/year?
+2. Is the inbox copy a default or a paid feature? It doubles email volume but costs only about $0.10 per customer.
+3. Retention: how long do we keep newsletter Markdown? Shorter retention means lower storage cost and less exposure.
 
 ## Kindle / Email Constraints (reference)
 
