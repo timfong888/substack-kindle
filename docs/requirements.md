@@ -223,8 +223,9 @@ The inbox copy roughly doubles email volume. It is still cheap; keep it on by de
 | 1,000 | ~310,000 | Pro with overage, or a higher tier | $110–$255 | $0.11–$0.26 |
 | 10,000 | ~3.1M | Scale top tier plus overage | about $1,400 | $0.14 |
 
-Email costs **$0.11–$0.30 per customer per month** at any realistic scale. The free plan's 100 per day cap covers
-only about 10 test customers.
+From about 160 customers up, email costs **$0.11–$0.30 per customer per month**. Below that the $20 Pro plan is a
+fixed cost spread over few customers ($2.00 each at 10). The free plan's 100 per day cap covers only about 10 test
+customers.
 
 ### Other costs (verify each)
 
@@ -240,8 +241,17 @@ only about 10 test customers.
 ### Pricing and margin
 
 - Competitors: Inkwell about $4/month, Readbetter free, others (see `design/reading-experience.md`, positioning).
-- At **$4/month**, cost per typical customer is about $0.15 email, $0.42 payment fees, and under $0.10 shared
-  hosting. That is about $0.67, a gross margin of about 83%. On annual billing ($40/year, about $3.33/month) it is about $0.37, or about 89%.
+- Fixed monthly costs at launch are about $42: Resend Pro $20, Vercel Pro $20, domain about $1.50 (Convex and Clerk on
+  free tiers). Per-customer cost at **$4/month** (monthly billing, typical reader) therefore depends on scale:
+
+  | Customers | Fixed cost per customer | Payment fees | Total cost per customer | Gross margin |
+  |---|---|---|---|---|
+  | 10 | $4.20 | $0.42 | $4.62 | negative (about −16%) |
+  | 100 | $0.42 | $0.42 | $0.84 | about 79% |
+  | 1,000 | $0.11–$0.26 (email, with overage) + $0.02 hosting | $0.42 | $0.55–$0.70 | about 82–86% |
+
+  Break-even on fixed costs is about 12 paying customers. On annual billing ($40/year, about $3.33/month) payment
+  fees drop to about $0.12 per month, so margin at 1,000 customers is about 88–92%.
 - Email is not the constraint. The real costs are **payment fees** (favour annual plans), **support** (the pass-through
   touches login mail, so failures are urgent), and **customer acquisition**.
 - A free tier is affordable: a Kindle-only reader with a weekly digest costs well under $0.10 per month in email.

@@ -189,6 +189,9 @@ customer, not only paying ones, is affordable at these numbers.
 
 ## UX — what the customer sees
 
+> **Superseded (2026-10-10).** This describes the old RSS-first / forward-rule onboarding. The primary onboarding is
+> now the pass-through email change; see the decision under "Options for the paid path" and the Flow below.
+
 Onboarding (option B shown; C differs only in step 3):
 
 1. "Add your newsletters." Customer enters publication URLs. Free ones go to RSS immediately.
@@ -238,12 +241,15 @@ verification or CASA burden that killed the Gmail path applies. Never request an
    Resend and every address on it is received (**verify** catch-all). The "inbox" is our own table of received
    messages keyed by proxy address. Unknown local parts are dropped.
 3. **Kindle** — enter `kindle_email`; show the shared `whitelist_email` with the Amazon steps; "Send test document".
-4. **Add publications** — paste Substack URLs. Free ones go to RSS straight away.
-5. **Paid publications** — in order of preference:
-   a. paste the private feed URL (if #66 confirms it exists);
-   b. add a mail forward rule to the proxy address (copy-paste filter text; we show the forwarding-confirmation code
+4. **Connect Substack (primary, decision 2026-10-10)** — button opens `https://substack.com/settings`; the customer
+   clicks **Edit** next to **Email** and pastes the proxy address. We show the proxy-side confirmation; they click the
+   one sent to their old address. No publication URLs are entered: publications appear as issues arrive, each with an
+   include/exclude toggle. Full pass-through applies (see the decision's launch requirements).
+5. **Fallbacks**, for customers who won't change their Substack email:
+   a. add a mail forward rule to the proxy address (copy-paste filter text; we show the forwarding-confirmation code
       when it lands at the proxy);
-   c. change the Substack account email to the proxy (pass-through; see risks under option C).
+   b. paste the private feed URL (if #66 confirms it exists);
+   c. paste free publication URLs for RSS delivery and backfill.
 6. **Dashboard** — each publication with its channel, last issue received, and last delivered to Kindle.
 
 ### Can the Substack email change be done by API / curl instead of the browser?
