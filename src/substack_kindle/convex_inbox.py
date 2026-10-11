@@ -47,8 +47,8 @@ def pipeline_signature(
 
 def _row_to_message(row: dict[str, Any]) -> InboundMessage:
     body = row.get("html")
-    if body is None:
-        # html is dropped when oversize (htmlTruncated); fall back to plain text.
+    if not body:
+        # html is dropped when oversize (htmlTruncated) or empty; fall back to plain text.
         text = row.get("text")
         if text:
             body = f"<pre>{html.escape(text, quote=False)}</pre>"

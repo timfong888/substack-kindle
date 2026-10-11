@@ -60,10 +60,17 @@ export function extractConfirmationCode(text: string): string | null {
 /**
  * Create or update a user from a Clerk webhook. The proxy address is issued on
  * first creation only and never changes afterwards (updates touch email only).
+ * Returns null for a user already deleted in Clerk.
  */
 export const upsertFromClerk = internalMutation({
   args: { clerkUserId: v.string(), email: v.string() },
   handler: async (ctx, { clerkUserId, email }) => {
+    const tombstone = await ctx.db
+      .query("deletedClerkUsers")
+      .withIndex("byClerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
+      .first();
+    if (tombstone !== null) return null; // deleted in Clerk; ignore late events
+
     const existing = await ctx.db
       .query("users")
       .withIndex("byClerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
@@ -96,6 +103,14 @@ export const upsertFromClerk = internalMutation({
 export const deleteFromClerk = internalMutation({
   args: { clerkUserId: v.string() },
   handler: async (ctx, { clerkUserId }) => {
+    const tombstone = await ctx.db
+      .query("deletedClerkUsers")
+      .withIndex("byClerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
+      .first();
+    if (tombstone === null) {
+      // Recorded even when the user row doesn't exist yet (delete arrived first).
+      await ctx.db.insert("deletedClerkUsers", { clerkUserId, deletedAt: Date.now() });
+    }
     const user = await ctx.db
       .query("users")
       .withIndex("byClerkUserId", (q) => q.eq("clerkUserId", clerkUserId))

@@ -173,6 +173,38 @@ describe("POST /clerk-users-webhook", () => {
     expect(res.status).toBe(200);
   });
 
+  test("a late user.updated after user.deleted does not recreate the user", async () => {
+    const t = convexTest(schema, modules);
+    await t.fetch(
+      "/clerk-users-webhook",
+      signedRequest({ type: "user.created", data: clerkUser("user_1", "tim@example.com") }),
+    );
+    await t.fetch(
+      "/clerk-users-webhook",
+      signedRequest({ type: "user.deleted", data: { id: "user_1", deleted: true } }),
+    );
+    const res = await t.fetch(
+      "/clerk-users-webhook",
+      signedRequest({ type: "user.updated", data: clerkUser("user_1", "tim@example.com") }),
+    );
+    expect(res.status).toBe(200);
+    expect(await allUsers(t)).toHaveLength(0);
+  });
+
+  test("user.deleted arriving before user.created blocks the late create", async () => {
+    const t = convexTest(schema, modules);
+    await t.fetch(
+      "/clerk-users-webhook",
+      signedRequest({ type: "user.deleted", data: { id: "user_1", deleted: true } }),
+    );
+    const res = await t.fetch(
+      "/clerk-users-webhook",
+      signedRequest({ type: "user.created", data: clerkUser("user_1", "tim@example.com") }),
+    );
+    expect(res.status).toBe(200);
+    expect(await allUsers(t)).toHaveLength(0);
+  });
+
   test("bad signature returns 400 and writes nothing", async () => {
     const t = convexTest(schema, modules);
     const res = await t.fetch(

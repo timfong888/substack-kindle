@@ -14,6 +14,13 @@ export default defineSchema({
     .index("byClerkUserId", ["clerkUserId"])
     .index("byProxyAddress", ["proxyAddress"]),
 
+  // Clerk user ids are never reused. A tombstone stops a late or out-of-order
+  // user.created / user.updated webhook from recreating a deleted user.
+  deletedClerkUsers: defineTable({
+    clerkUserId: v.string(),
+    deletedAt: v.number(),
+  }).index("byClerkUserId", ["clerkUserId"]),
+
   receivedEmails: defineTable({
     userId: v.id("users"),
     resendEmailId: v.string(),

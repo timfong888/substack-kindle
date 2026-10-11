@@ -163,6 +163,14 @@ def test_html_missing_falls_back_to_escaped_text():
     assert msg.html_body == "<pre>a &lt; b &amp; c</pre>"
 
 
+def test_empty_html_falls_back_to_text():
+    client = FakeClient([_row(html="", text="plain body")])
+    [msg] = fetch_inbound(
+        client, proxy_address=PROXY, window_start=START, window_end=END, secret=SECRET
+    )
+    assert msg.html_body == "<pre>plain body</pre>"
+
+
 def test_non_utc_window_is_converted_to_epoch_millis():
     plus8 = timezone(timedelta(hours=8))
     client = FakeClient([])
