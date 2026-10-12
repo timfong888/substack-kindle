@@ -25,12 +25,16 @@ Every step below can be done in the four dashboards, with no local CLI:
   They create a separate deployment per branch with its own URL and empty env vars, so the
   webhooks would never reach it.) Set step 4's variables on the same Production deployment
   under **Settings → Environment Variables** instead of `npx convex env set`.
-- **Vercel** deploys the Convex functions on every build: set the build command to
-  `npx convex deploy --cmd 'npm run build'` and add the Production key as `CONVEX_DEPLOY_KEY`
-  for **both Production and Preview** environments.
+- **Vercel** deploys the Convex functions on every build. The build command
+  (`npx convex deploy --cmd 'npm run build'`) and framework are set in `web/vercel.json`, so the
+  only dashboard settings are **Root Directory** = `web` and the environment variables. Add the
+  Production key as `CONVEX_DEPLOY_KEY` for the **Production** environment only. Convex refuses
+  a Production key in a Vercel Preview build ("Detected a non-production build environment"), so
+  branch previews fail until they get their own Preview deploy key; run the smoke test on a
+  Production deployment.
   `NEXT_PUBLIC_CONVEX_URL` is then set automatically during the build.
-- Until this PR merges, deploy the `feat/convex-clerk-resend-inbox` branch (a Vercel
-  preview deployment) for the smoke test.
+- Run the smoke test on a Production deployment: merge this PR so `main` deploys, or promote a
+  deployment of this branch to Production.
 
 ## 1. Convex project
 
