@@ -46,6 +46,9 @@ Whenever a step needs the owner to act (dashboards, accounts, secrets, merges), 
 one action per step, the direct link to the specific page (not just the site), the exact menu path and button
 label, the exact value or variable name to enter, and where it comes from. Never write "configure X" or
 "go to settings". Never ask the owner to paste secrets into chat.
+Every step names the **service** (Vercel, Convex, Clerk, Resend, GitHub) and the **environment or instance** it
+applies to (e.g. Clerk *Development* instance, Convex *Production* deployment, Vercel *Production* environment).
+For every value to copy, give its source: the exact page and the exact on-screen label it sits under.
 
 ## Karpathy coding guidelines
 
