@@ -12,7 +12,7 @@
     "start": "next start",
     "convex:dev": "convex dev",
     "codegen:offline": "convex codegen --system-udfs --typecheck disable",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p convex/tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
