@@ -272,6 +272,7 @@ describe("users.current", () => {
     expect(await t.withIdentity({ subject: "user_1" }).query(api.users.current, {})).toEqual({
       email: "tim@example.com",
       proxyAddress: "tim-aaaaaaaa@testinbox.resend.app",
+      forwarding: false,
     });
   });
 });

@@ -38,6 +38,8 @@ export default defineSchema({
     textTruncated: v.optional(v.boolean()),
     bodyStatus: v.union(v.literal("pending"), v.literal("stored")),
     kind: emailKind,
+    // Set once the pass-through copy to the user's own inbox was sent.
+    forwardedAt: v.optional(v.number()),
   })
     .index("byResendEmailId", ["resendEmailId"])
     .index("byUserAndReceivedAt", ["userId", "receivedAt"])

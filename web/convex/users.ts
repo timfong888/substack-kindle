@@ -19,13 +19,20 @@ async function currentUser(ctx: QueryCtx) {
     .unique();
 }
 
-/** Signed-in user's email + proxy address, or null (signed out / webhook not landed yet). */
+/**
+ * Signed-in user's email + proxy address, or null (signed out / webhook not landed yet).
+ * `forwarding` says whether pass-through to the user's own inbox is switched on.
+ */
 export const current = query({
   args: {},
   handler: async (ctx) => {
     const user = await currentUser(ctx);
     if (user === null) return null;
-    return { email: user.email, proxyAddress: user.proxyAddress };
+    return {
+      email: user.email,
+      proxyAddress: user.proxyAddress,
+      forwarding: Boolean(process.env.RESEND_FORWARD_FROM),
+    };
   },
 });
 
@@ -53,7 +60,7 @@ export const recentConfirmations = query({
 });
 
 /**
- * Newest emails of any kind for the signed-in user. Until pass-through forwarding ships this is
+ * Newest emails of any kind for the signed-in user. Without pass-through forwarding this is
  * the only way to read mail sent to the proxy, e.g. Substack's email-change confirmation.
  */
 export const recentEmails = query({

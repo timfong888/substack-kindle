@@ -44,7 +44,7 @@ function Dashboard() {
         <>
           <h2 style={{ fontSize: 18 }}>Your proxy address</h2>
           <ProxyAddress address={me.proxyAddress} />
-          <Instructions address={me.proxyAddress} email={me.email} />
+          <Instructions address={me.proxyAddress} email={me.email} forwarding={me.forwarding} />
         </>
       )}
       {recent && recent.length > 0 && <RecentEmails emails={recent} />}
@@ -97,15 +97,26 @@ function ProxyAddress({ address }: { address: string }) {
 // Substack account settings, where the reader replaces their account email with the proxy.
 const SUBSTACK_SETTINGS_URL = "https://substack.com/settings?utm_source=user-menu";
 
-// Flip to true once pass-through forwarding (login codes and account mail to the real inbox)
-// ships. Until then, changing the Substack email would cut the reader off from login codes.
-const PASS_THROUGH_LIVE = false;
-
-function Instructions({ address, email }: { address: string; email: string }) {
+function Instructions({
+  address,
+  email,
+  forwarding,
+}: {
+  address: string;
+  email: string;
+  // Pass-through to the user's own inbox is on. Without it, changing the Substack email
+  // would cut the reader off from login codes.
+  forwarding: boolean;
+}) {
   return (
     <section>
       <h2 style={{ fontSize: 18 }}>Connect Substack</h2>
-      {!PASS_THROUGH_LIVE && (
+      {forwarding ? (
+        <p>
+          Everything Substack sends to your proxy address is also forwarded to{" "}
+          <code>{email}</code>, so login codes and receipts still reach you.
+        </p>
+      ) : (
         <p style={{ padding: "8px 12px", border: "1px solid #c00", color: "#c00" }}>
           <strong>Not yet:</strong> forwarding to your own inbox isn&apos;t live. If you change your
           Substack email now, Substack login codes will stop reaching you. Wait for this notice to
@@ -129,7 +140,14 @@ function Instructions({ address, email }: { address: string; email: string }) {
           <code>{email}</code> and click <strong>Confirm Email Change</strong>.
         </li>
         <li>
-          Substack then sends a second confirmation to your proxy address. It appears below under{" "}
+          Substack then sends a second confirmation to your proxy address.{" "}
+          {forwarding ? (
+            <>
+              It is forwarded to <code>{email}</code> and also appears below under{" "}
+            </>
+          ) : (
+            <>It appears below under </>
+          )}
           <strong>Mail received at your proxy</strong>. Open it and click its confirmation link.
           Your Substack email changes only after both are confirmed.
         </li>

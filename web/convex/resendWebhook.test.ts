@@ -7,6 +7,7 @@ import {
   MAX_BODY_BYTES,
   classifyKind,
   collectRecipients,
+  forwardFromHeader,
   guardBodies,
 } from "./inbound";
 import schema from "./schema";
@@ -357,6 +358,173 @@ describe("inbound.fetchBody", () => {
       t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" }),
     ).rejects.toThrow(/RESEND_API_KEY/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("inbound.fetchBody forwarding (pass-through)", () => {
+  const FORWARD_FROM = "fwd@mail.example.com";
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** fetch mock: GET returns the received email, POST /emails returns `sendResponse`. */
+  function stubResend(email = resendBody(), sendResponse = () => Response.json({ id: "sent_1" })) {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      init?.method === "POST" ? sendResponse() : Response.json(email),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  function sends(fetchMock: ReturnType<typeof stubResend>) {
+    return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+  }
+
+  async function pendingRow(
+    t: ReturnType<typeof convexTest>,
+    { from = "Lenny <lenny@substack.com>", email = "tim@example.com" } = {},
+  ) {
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { clerkUserId: "user_1", email, proxyAddress: PROXY, createdAt: 1 }),
+    );
+    return await t.run(async (ctx) =>
+      ctx.db.insert("receivedEmails", {
+        userId,
+        resendEmailId: "em_1",
+        from,
+        subject: "Weekly issue",
+        receivedAt: 1,
+        bodyStatus: "pending",
+        kind: classifyKind(from),
+      }),
+    );
+  }
+
+  test("forwards the email to the user's own address and marks it forwarded", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    const fetchMock = stubResend();
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+
+    const [[url, init]] = sends(fetchMock);
+    expect(url).toBe("https://api.resend.com/emails");
+    const headers = init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${TEST_RESEND_KEY}`);
+    expect(headers["Idempotency-Key"]).toBe("forward-em_1");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      from: `"Lenny via proxy" <${FORWARD_FROM}>`,
+      to: ["tim@example.com"],
+      reply_to: "Lenny <lenny@substack.com>",
+      subject: "Weekly issue",
+      html: "<p>Hello</p>",
+      text: "Hello",
+    });
+    const row = await t.run(async (ctx) => ctx.db.get(rowId));
+    expect(row?.bodyStatus).toBe("stored");
+    expect(row?.forwardedAt).toEqual(expect.any(Number));
+  });
+
+  test("forwarding is off when RESEND_FORWARD_FROM is unset", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", "");
+    const fetchMock = stubResend();
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    expect(sends(fetchMock)).toHaveLength(0);
+    expect((await t.run(async (ctx) => ctx.db.get(rowId)))?.forwardedAt).toBeUndefined();
+  });
+
+  test("Gmail forwarding confirmations are not forwarded", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    const fetchMock = stubResend(resendBody({ from: GOOGLE_FORWARDING_SENDER }));
+    const t = setup();
+    const rowId = await pendingRow(t, { from: GOOGLE_FORWARDING_SENDER });
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    expect(sends(fetchMock)).toHaveLength(0);
+  });
+
+  test("never forwards to an address on the inbound domain (mail loop)", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    vi.stubEnv("RESEND_INBOUND_DOMAIN", INBOUND_DOMAIN);
+    const fetchMock = stubResend();
+    const t = setup();
+    const rowId = await pendingRow(t, { email: `someone@${INBOUND_DOMAIN.toUpperCase()}` });
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    expect(sends(fetchMock)).toHaveLength(0);
+  });
+
+  test("a rerun after a successful forward does not send twice", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    const fetchMock = stubResend();
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    expect(sends(fetchMock)).toHaveLength(1);
+  });
+
+  test("a failed send throws, but the body is still stored and the row stays unforwarded", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    stubResend(resendBody(), () => new Response("domain not verified", { status: 403 }));
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await expect(
+      t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" }),
+    ).rejects.toThrow(/HTTP 403/);
+    const row = await t.run(async (ctx) => ctx.db.get(rowId));
+    expect(row?.bodyStatus).toBe("stored");
+    expect(row?.forwardedAt).toBeUndefined();
+  });
+
+  test("an email with no body is still forwarded (Resend needs html or text)", async () => {
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    const fetchMock = stubResend(resendBody({ html: null, text: null }));
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    const body = JSON.parse(String(sends(fetchMock)[0][1]?.body));
+    expect(body.html).toBeUndefined();
+    expect(body.text).toBe("");
+  });
+});
+
+describe("forwardFromHeader", () => {
+  test("uses the original display name, else the original address", () => {
+    expect(forwardFromHeader("Lenny <lenny@substack.com>", "f@x.io")).toBe(
+      '"Lenny via proxy" <f@x.io>',
+    );
+    expect(forwardFromHeader("no-reply@substack.com", "f@x.io")).toBe(
+      '"no-reply@substack.com via proxy" <f@x.io>',
+    );
+  });
+
+  test("strips characters that would break the header", () => {
+    expect(forwardFromHeader('"Evil" <x>\r\nBcc: a@b <e@v.il>', "f@x.io")).toBe(
+      '"Evil x Bcc: a@b via proxy" <f@x.io>',
+    );
+  });
+});
+
+describe("users.current forwarding flag", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  test("reports whether pass-through forwarding is configured", async () => {
+    const t = setup();
+    await seedUser(t);
+    const asUser = t.withIdentity({ subject: "user_1" });
+    vi.stubEnv("RESEND_FORWARD_FROM", "");
+    expect((await asUser.query(api.users.current))?.forwarding).toBe(false);
+    vi.stubEnv("RESEND_FORWARD_FROM", "fwd@mail.example.com");
+    expect((await asUser.query(api.users.current))?.forwarding).toBe(true);
   });
 });
 

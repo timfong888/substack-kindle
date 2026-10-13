@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction, internalMutation } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 
 export const GOOGLE_FORWARDING_SENDER = "forwarding-noreply@google.com";
 export const RESEND_RECEIVING_API = "https://api.resend.com/emails/receiving";
+export const RESEND_SEND_API = "https://api.resend.com/emails";
 /** Convex documents max out at ~1 MiB; keep bodies well under it. */
 export const MAX_BODY_BYTES = 900_000;
 
@@ -56,6 +57,19 @@ export function guardBodies(html: string | undefined, text: string | undefined) 
     textTruncated = true;
   }
   return { html: htmlOut, text: textOut, htmlTruncated, textTruncated };
+}
+
+/**
+ * From header for a forwarded copy: the original sender's name on our own verified
+ * sending address. Sending as the original sender would fail its SPF/DMARC.
+ */
+export function forwardFromHeader(originalFrom: string, forwardAddress: string): string {
+  const m = /^([\s\S]*)<[^>]*>\s*$/.exec(originalFrom);
+  const name = (m && m[1].trim() ? m[1] : originalFrom)
+    .replace(/["<>\\\r\n]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `"${name} via proxy" <${forwardAddress}>`;
 }
 
 function parseTimestamp(value: string | undefined, fallback: number): number {
@@ -150,6 +164,61 @@ export const fetchBody = internalAction({
       htmlTruncated: bodies.htmlTruncated || undefined,
       textTruncated: bodies.textTruncated || undefined,
     });
+
+    // Pass-through: copy the email to the user's own inbox, so login codes and
+    // receipts still reach them after their Substack email points at the proxy.
+    // Off until RESEND_FORWARD_FROM (an address on a Resend-verified domain) is set.
+    const forwardAddress = process.env.RESEND_FORWARD_FROM;
+    if (!forwardAddress) return;
+    const target = await ctx.runQuery(internal.inbound.forwardTarget, { rowId });
+    if (target === null) return;
+    const from = email.from ?? target.from;
+    const sent = await fetch(RESEND_SEND_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        // Resend drops a repeat with the same key (24h), so a retry can't double-send.
+        "Idempotency-Key": `forward-${resendEmailId}`,
+      },
+      body: JSON.stringify({
+        from: forwardFromHeader(from, forwardAddress),
+        to: [target.to],
+        reply_to: from,
+        subject: email.subject ?? target.subject,
+        html: email.html ?? undefined,
+        text: email.text ?? (email.html ? undefined : ""),
+      }),
+    });
+    if (!sent.ok) {
+      throw new Error(`Resend forward of ${resendEmailId} failed: HTTP ${sent.status}`);
+    }
+    await ctx.runMutation(internal.inbound.markForwarded, { rowId });
+  },
+});
+
+/**
+ * Where to forward a stored email, or null when it must not be forwarded:
+ * already forwarded, a Gmail forwarding confirmation (meant for our dashboard),
+ * a deleted user, or a user email on our own inbound domain (a mail loop).
+ */
+export const forwardTarget = internalQuery({
+  args: { rowId: v.id("receivedEmails") },
+  handler: async (ctx, { rowId }) => {
+    const row = await ctx.db.get(rowId);
+    if (row === null || row.forwardedAt !== undefined || row.kind !== "newsletter") return null;
+    const user = await ctx.db.get(row.userId);
+    if (user === null) return null;
+    const inboundDomain = (process.env.RESEND_INBOUND_DOMAIN ?? "").toLowerCase();
+    if (inboundDomain && user.email.toLowerCase().endsWith(`@${inboundDomain}`)) return null;
+    return { to: user.email, from: row.from, subject: row.subject };
+  },
+});
+
+export const markForwarded = internalMutation({
+  args: { rowId: v.id("receivedEmails") },
+  handler: async (ctx, { rowId }) => {
+    if ((await ctx.db.get(rowId)) !== null) await ctx.db.patch(rowId, { forwardedAt: Date.now() });
   },
 });
 

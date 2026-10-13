@@ -64,7 +64,13 @@ Every step below can be done in the four dashboards, with no local CLI:
    `RESEND_INBOUND_DOMAIN`.
 2. Webhooks → Add `https://<deployment>.convex.site/resend-inbound`, event
    `email.received`. Copy the signing secret (`RESEND_WEBHOOK_SECRET`).
-3. API Keys → create a key that can read received emails (`RESEND_API_KEY`).
+3. API Keys → create a key with **Full access** (`RESEND_API_KEY`). It reads received
+   emails and, for pass-through, sends the forwarded copies.
+4. Pass-through forwarding (optional; off until set): Domains → add and verify a sending
+   domain you own, then pick an address on it, e.g. `fwd@mail.example.com`. This is
+   `RESEND_FORWARD_FROM`. Resend cannot send from the `.resend.app` receiving domain. Every
+   email to a proxy is then copied to the user's sign-up email, sent from that address with
+   the original sender's name and `Reply-To`. Gmail forwarding confirmations are not copied.
 
 ## 4. Convex environment variables
 
@@ -76,6 +82,7 @@ npx convex env set CLERK_JWT_ISSUER_DOMAIN <from 2.2>
 npx convex env set RESEND_API_KEY         <from 3.3>
 npx convex env set RESEND_WEBHOOK_SECRET  <from 3.2>
 npx convex env set RESEND_INBOUND_DOMAIN  <from 3.1, e.g. abc123.resend.app>
+npx convex env set RESEND_FORWARD_FROM    <from 3.4, e.g. fwd@mail.example.com>  # optional
 npx convex env set PIPELINE_SHARED_SECRET "$(openssl rand -hex 32)"
 ```
 
