@@ -92,24 +92,49 @@ function ProxyAddress({ address }: { address: string }) {
   );
 }
 
+// Substack account settings, where the reader replaces their account email with the proxy.
+const SUBSTACK_SETTINGS_URL = "https://substack.com/settings?utm_source=user-menu";
+
+// Flip to true once pass-through forwarding (login codes and account mail to the real inbox)
+// ships. Until then, changing the Substack email would cut the reader off from login codes.
+const PASS_THROUGH_LIVE = false;
+
 function Instructions({ address }: { address: string }) {
   return (
     <section>
-      <h2 style={{ fontSize: 18 }}>Send your newsletters here</h2>
+      <h2 style={{ fontSize: 18 }}>Connect Substack</h2>
+      {!PASS_THROUGH_LIVE && (
+        <p style={{ padding: "8px 12px", border: "1px solid #c00", color: "#c00" }}>
+          <strong>Not yet:</strong> forwarding to your own inbox isn&apos;t live. If you change your
+          Substack email now, Substack login codes will stop reaching you. Wait for this notice to
+          disappear.
+        </p>
+      )}
       <ol>
         <li>
-          <strong>Recommended: add a forwarding rule.</strong> In Gmail, open Settings → Forwarding
-          and add <code>{address}</code>. Gmail sends a confirmation code to this address; it
-          appears on this page within a minute. Then create a filter (e.g. from:
-          <code>substack.com</code>) that forwards matching mail to this address.
+          Copy your proxy address above: <code>{address}</code>
         </li>
         <li>
-          <strong>Last resort: change your newsletter email.</strong> You can change your Substack
-          account email to this address instead. Warning: this is account-wide. Substack login
-          links will then go to this address, not your inbox, and Substack logs you out
-          everywhere. Prefer the forwarding rule.
+          Open{" "}
+          <a href={SUBSTACK_SETTINGS_URL} target="_blank" rel="noopener noreferrer">
+            your Substack settings
+          </a>
+          , click <strong>Edit</strong> next to <strong>Email</strong>, paste the proxy address and
+          save.
+        </li>
+        <li>
+          Substack sends a confirmation to both addresses. Click the one in your own inbox. Your
+          newsletters then arrive here, and every other Substack email (login codes, receipts) is
+          forwarded to your own inbox.
         </li>
       </ol>
+      <p>
+        <small>
+          Prefer not to change your Substack email? Add a forwarding rule instead: in Gmail, open
+          Settings → Forwarding and add <code>{address}</code> (the confirmation code appears on
+          this page), then filter <code>from:substack.com</code> to forward to it.
+        </small>
+      </p>
     </section>
   );
 }
