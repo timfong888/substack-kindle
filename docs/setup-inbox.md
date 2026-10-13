@@ -86,11 +86,22 @@ the pipeline host's clock must be accurate. Then `npx convex deploy` for prod.
 
 ## 5. Vercel
 
-1. Import the repo, **Root Directory** `web/`, framework Next.js.
-2. Environment variables: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
-   `NEXT_PUBLIC_CONVEX_URL` (the prod `.convex.cloud` URL), `CLERK_JWT_ISSUER_DOMAIN`.
-   See `web/.env.example`.
-3. Deploy. Add the Vercel domain to Clerk's allowed origins if Clerk asks.
+1. Import the repo and set **Root Directory** to `web`. Framework and build command come from
+   `web/vercel.json`. If the project was imported as "Python", it fails with
+   "No python entrypoint found" until Root Directory is `web`.
+2. Environment variables (Vercel project → **Settings → Environment Variables → Project** tab),
+   values from Clerk **Development** instance → **Configure → API keys**:
+
+   | Key (exact name) | Value source | Type | Environments |
+   |---|---|---|---|
+   | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | **Publishable key** (`pk_test_…`) | Config | Production, Preview |
+   | `CLERK_SECRET_KEY` | **Secret keys → default** (`sk_test_…`) | Secret | Production, Preview |
+   | `CONVEX_DEPLOY_KEY` | Convex **Production** deployment → Settings → URL & Deploy Key | Secret | Production |
+
+   The `NEXT_PUBLIC_` prefix is required: without it the page fails with
+   "Clerk keys are missing from your environment". `NEXT_PUBLIC_CONVEX_URL` is set by the build.
+   `CLERK_JWT_ISSUER_DOMAIN` belongs on Convex, not Vercel.
+3. Deploy to **Production**. Environment variables only apply to builds started after they change.
 
 ## 6. Smoke test
 
