@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import {
   GOOGLE_FORWARDING_SENDER,
   MAX_BODY_BYTES,
@@ -356,5 +357,48 @@ describe("inbound.fetchBody", () => {
       t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" }),
     ).rejects.toThrow(/RESEND_API_KEY/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("users.recentEmails", () => {
+  async function seedEmails(t: ReturnType<typeof convexTest>, userId: Id<"users">, n: number) {
+    await t.run(async (ctx) => {
+      for (let i = 1; i <= n; i++) {
+        await ctx.db.insert("receivedEmails", {
+          userId,
+          resendEmailId: `em_${i}`,
+          from: `sender${i}@substack.com`,
+          subject: `subject ${i}`,
+          receivedAt: i,
+          bodyStatus: i === n ? "pending" : "stored",
+          kind: i === 1 ? "confirmation" : "newsletter",
+          ...(i === n ? {} : { text: `body ${i} https://substack.com/confirm/${i}` }),
+        });
+      }
+    });
+  }
+
+  test("returns the five newest emails of any kind for the signed-in user, newest first", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t);
+    await seedEmails(t, userId, 7);
+    const rows = await t.withIdentity({ subject: "user_1" }).query(api.users.recentEmails, {});
+    expect(rows.map((r) => r.subject)).toEqual([
+      "subject 7",
+      "subject 6",
+      "subject 5",
+      "subject 4",
+      "subject 3",
+    ]);
+    expect(rows[0]).toMatchObject({ from: "sender7@substack.com", receivedAt: 7, text: null });
+    expect(rows[1].text).toBe("body 6 https://substack.com/confirm/6");
+  });
+
+  test("is empty for another user and when signed out", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t);
+    await seedEmails(t, userId, 2);
+    expect(await t.withIdentity({ subject: "other" }).query(api.users.recentEmails, {})).toEqual([]);
+    expect(await t.query(api.users.recentEmails, {})).toEqual([]);
   });
 });

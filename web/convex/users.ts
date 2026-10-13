@@ -8,6 +8,7 @@ import { generateProxyAddress } from "./proxyAddress";
 const MAX_ADDRESS_ATTEMPTS = 5;
 const PURGE_BATCH = 100;
 const CONFIRMATION_LIMIT = 5;
+const RECENT_EMAIL_LIMIT = 5;
 
 async function currentUser(ctx: QueryCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -46,6 +47,30 @@ export const recentConfirmations = query({
       subject: r.subject,
       receivedAt: r.receivedAt,
       code: extractConfirmationCode(r.text ?? ""),
+      text: r.text ?? null,
+    }));
+  },
+});
+
+/**
+ * Newest emails of any kind for the signed-in user. Until pass-through forwarding ships this is
+ * the only way to read mail sent to the proxy, e.g. Substack's email-change confirmation.
+ */
+export const recentEmails = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await currentUser(ctx);
+    if (user === null) return [];
+    const rows = await ctx.db
+      .query("receivedEmails")
+      .withIndex("byUserAndReceivedAt", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(RECENT_EMAIL_LIMIT);
+    return rows.map((r) => ({
+      id: r._id,
+      from: r.from,
+      subject: r.subject,
+      receivedAt: r.receivedAt,
       text: r.text ?? null,
     }));
   },
