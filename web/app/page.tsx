@@ -184,6 +184,7 @@ type ReceivedEmail = {
   from: string;
   subject: string;
   receivedAt: number;
+  pending: boolean;
   text: string | null;
 };
 
@@ -201,7 +202,7 @@ function RecentEmails({ emails }: { emails: ReceivedEmail[] }) {
               </summary>
               {e.text === null ? (
                 <p>
-                  <small>Body not available yet.</small>
+                  <small>{e.pending ? "Body not available yet." : "No readable body."}</small>
                 </p>
               ) : (
                 <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
@@ -220,7 +221,8 @@ function RecentEmails({ emails }: { emails: ReceivedEmail[] }) {
 function Linkified({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(https:\/\/[^\s<>"]+)/g).map((part, i) =>
+      {/* Parentheses excluded: htmlToReadableText writes links as "label (url)". */}
+      {text.split(/(https:\/\/[^\s<>"()]+)/g).map((part, i) =>
         part.startsWith("https://") ? (
           <a key={i} href={part} target="_blank" rel="noopener noreferrer">
             {part}

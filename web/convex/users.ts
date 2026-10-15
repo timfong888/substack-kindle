@@ -78,10 +78,46 @@ export const recentEmails = query({
       from: r.from,
       subject: r.subject,
       receivedAt: r.receivedAt,
-      text: r.text ?? null,
+      pending: r.bodyStatus === "pending",
+      // Many emails (e.g. Substack's confirmations) may have only an HTML part.
+      text: r.text ?? (r.html ? htmlToReadableText(r.html) : null),
     }));
   },
 });
+
+const ENTITIES: Record<string, string> = {
+  "&nbsp;": " ",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&amp;": "&",
+};
+
+function decodeEntities(s: string): string {
+  return s.replace(/&(nbsp|lt|gt|quot|#39|amp);/g, (m) => ENTITIES[m]);
+}
+
+/**
+ * Plain text from an HTML email for the dashboard reader: drops style/script,
+ * keeps https link targets as "text (url)" so confirmation links stay clickable,
+ * turns block elements into line breaks. Display only; never rendered as HTML.
+ */
+export function htmlToReadableText(html: string): string {
+  const text = html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
+    .replace(
+      /<a\b[^>]*?href\s*=\s*"(https:[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+      (_m, href: string, label: string) => `${label} (${decodeEntities(href)})`,
+    )
+    .replace(/<(br|\/p|\/div|\/tr|\/li|\/h[1-6])\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeEntities(text)
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
 
 /** Gmail's forwarding confirmation contains "Confirmation code: 123456789". */
 export function extractConfirmationCode(text: string): string | null {

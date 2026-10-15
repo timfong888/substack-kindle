@@ -5,12 +5,14 @@ import type { Id } from "./_generated/dataModel";
 import {
   GOOGLE_FORWARDING_SENDER,
   MAX_BODY_BYTES,
+  MAX_FORWARD_ATTEMPTS,
   classifyKind,
   collectRecipients,
   forwardFromHeader,
   guardBodies,
 } from "./inbound";
 import schema from "./schema";
+import { htmlToReadableText } from "./users";
 import {
   INBOUND_DOMAIN,
   OTHER_SVIX_SECRET,
@@ -470,18 +472,62 @@ describe("inbound.fetchBody forwarding (pass-through)", () => {
     expect(sends(fetchMock)).toHaveLength(1);
   });
 
-  test("a failed send throws, but the body is still stored and the row stays unforwarded", async () => {
+  test("a failed send is retried later with the same idempotency key", async () => {
+    vi.useFakeTimers();
     vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
     vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
-    stubResend(resendBody(), () => new Response("domain not verified", { status: 403 }));
+    let sendCalls = 0;
+    const fetchMock = stubResend(resendBody(), () =>
+      ++sendCalls === 1 ? new Response("busy", { status: 503 }) : Response.json({ id: "sent_1" }),
+    );
     const t = setup();
     const rowId = await pendingRow(t);
-    await expect(
-      t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" }),
-    ).rejects.toThrow(/HTTP 403/);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    expect((await t.run(async (ctx) => ctx.db.get(rowId)))?.forwardedAt).toBeUndefined();
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const keys = sends(fetchMock).map(([, init]) => (init?.headers as Record<string, string>)["Idempotency-Key"]);
+    expect(keys).toEqual(["forward-em_1", "forward-em_1"]);
+    const row = await t.run(async (ctx) => ctx.db.get(rowId));
+    expect(row?.bodyStatus).toBe("stored");
+    expect(row?.forwardedAt).toEqual(expect.any(Number));
+    vi.useRealTimers();
+  });
+
+  test("a send that throws (network error) is retried too", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    let sendCalls = 0;
+    stubResend(resendBody(), () => {
+      if (++sendCalls === 1) throw new TypeError("fetch failed");
+      return Response.json({ id: "sent_1" });
+    });
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await t.run(async (ctx) => ctx.db.get(rowId)))?.forwardedAt).toEqual(expect.any(Number));
+    vi.useRealTimers();
+  });
+
+  test("gives up after MAX_FORWARD_ATTEMPTS and logs an error for alerting", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("RESEND_API_KEY", TEST_RESEND_KEY);
+    vi.stubEnv("RESEND_FORWARD_FROM", FORWARD_FROM);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = stubResend(resendBody(), () => new Response("domain not verified", { status: 403 }));
+    const t = setup();
+    const rowId = await pendingRow(t);
+    await t.action(internal.inbound.fetchBody, { rowId, resendEmailId: "em_1" });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(sends(fetchMock)).toHaveLength(MAX_FORWARD_ATTEMPTS);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/gave up.*em_1.*HTTP 403/));
     const row = await t.run(async (ctx) => ctx.db.get(rowId));
     expect(row?.bodyStatus).toBe("stored");
     expect(row?.forwardedAt).toBeUndefined();
+    errorSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   test("an email with no body is still forwarded (Resend needs html or text)", async () => {
@@ -558,8 +604,33 @@ describe("users.recentEmails", () => {
       "subject 4",
       "subject 3",
     ]);
-    expect(rows[0]).toMatchObject({ from: "sender7@substack.com", receivedAt: 7, text: null });
+    expect(rows[0]).toMatchObject({
+      from: "sender7@substack.com",
+      receivedAt: 7,
+      text: null,
+      pending: true,
+    });
     expect(rows[1].text).toBe("body 6 https://substack.com/confirm/6");
+  });
+
+  test("reports pending, and falls back to readable HTML when there is no text part", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("receivedEmails", {
+        userId,
+        resendEmailId: "em_html",
+        from: "no-reply@substack.com",
+        subject: "Confirm your new email",
+        receivedAt: 10,
+        bodyStatus: "stored",
+        kind: "newsletter",
+        html: '<style>p{}</style><p>Click <a href="https://substack.com/confirm?t=1&amp;u=2">Confirm Email Change</a></p>',
+      });
+    });
+    const [row] = await t.withIdentity({ subject: "user_1" }).query(api.users.recentEmails, {});
+    expect(row.pending).toBe(false);
+    expect(row.text).toBe("Click Confirm Email Change (https://substack.com/confirm?t=1&u=2)");
   });
 
   test("is empty for another user and when signed out", async () => {
@@ -568,5 +639,15 @@ describe("users.recentEmails", () => {
     await seedEmails(t, userId, 2);
     expect(await t.withIdentity({ subject: "other" }).query(api.users.recentEmails, {})).toEqual([]);
     expect(await t.query(api.users.recentEmails, {})).toEqual([]);
+  });
+});
+
+describe("htmlToReadableText", () => {
+  test("drops style/script, keeps link targets, decodes entities, collapses whitespace", () => {
+    expect(
+      htmlToReadableText(
+        '<script>x()</script><div>Hi&nbsp;&lt;you&gt;</div>\n<br><a href="https://a.b/c">go</a> <a href="mailto:x@y">mail</a>',
+      ),
+    ).toBe("Hi <you>\ngo (https://a.b/c) mail");
   });
 });

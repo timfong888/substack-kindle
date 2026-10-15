@@ -1,10 +1,16 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 
 export const GOOGLE_FORWARDING_SENDER = "forwarding-noreply@google.com";
 export const RESEND_RECEIVING_API = "https://api.resend.com/emails/receiving";
 export const RESEND_SEND_API = "https://api.resend.com/emails";
+/** Forward tries per email (first try + retries); then give up and log for alerting. */
+export const MAX_FORWARD_ATTEMPTS = 5;
+/** Delay before retry n (1-based): 30s, 2m, 8m, 32m. */
+const FORWARD_RETRY_BASE_MS = 30_000;
 /** Convex documents max out at ~1 MiB; keep bodies well under it. */
 export const MAX_BODY_BYTES = 900_000;
 
@@ -165,35 +171,102 @@ export const fetchBody = internalAction({
       textTruncated: bodies.textTruncated || undefined,
     });
 
-    // Pass-through: copy the email to the user's own inbox, so login codes and
-    // receipts still reach them after their Substack email points at the proxy.
-    // Off until RESEND_FORWARD_FROM (an address on a Resend-verified domain) is set.
-    const forwardAddress = process.env.RESEND_FORWARD_FROM;
-    if (!forwardAddress) return;
-    const target = await ctx.runQuery(internal.inbound.forwardTarget, { rowId });
-    if (target === null) return;
+    await forwardOrScheduleRetry(ctx, { rowId, resendEmailId, apiKey, email, attempt: 1 });
+  },
+});
+
+type ReceivedEmail = {
+  from?: string;
+  subject?: string;
+  html?: string | null;
+  text?: string | null;
+};
+
+/**
+ * Pass-through: copy the email to the user's own inbox, so login codes and
+ * receipts still reach them after their Substack email points at the proxy.
+ * Off until RESEND_FORWARD_FROM (an address on a Resend-verified domain) is set.
+ * A failed send is retried with backoff; the stored body and the Idempotency-Key
+ * make retries safe. After MAX_FORWARD_ATTEMPTS it logs an error for alerting.
+ */
+async function forwardOrScheduleRetry(
+  ctx: ActionCtx,
+  args: {
+    rowId: Id<"receivedEmails">;
+    resendEmailId: string;
+    apiKey: string;
+    email: ReceivedEmail | null;
+    attempt: number;
+  },
+) {
+  const { rowId, resendEmailId, apiKey, email, attempt } = args;
+  const forwardAddress = process.env.RESEND_FORWARD_FROM;
+  if (!forwardAddress) return;
+  const target = await ctx.runQuery(internal.inbound.forwardTarget, { rowId });
+  if (target === null) return;
+
+  let failure: string;
+  if (email === null) {
+    failure = "could not re-fetch the received email";
+  } else {
     const from = email.from ?? target.from;
-    const sent = await fetch(RESEND_SEND_API, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        // Resend drops a repeat with the same key (24h), so a retry can't double-send.
-        "Idempotency-Key": `forward-${resendEmailId}`,
-      },
-      body: JSON.stringify({
-        from: forwardFromHeader(from, forwardAddress),
-        to: [target.to],
-        reply_to: from,
-        subject: email.subject ?? target.subject,
-        html: email.html ?? undefined,
-        text: email.text ?? (email.html ? undefined : ""),
-      }),
-    });
-    if (!sent.ok) {
-      throw new Error(`Resend forward of ${resendEmailId} failed: HTTP ${sent.status}`);
+    try {
+      const sent = await fetch(RESEND_SEND_API, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          // Resend drops a repeat with the same key (24h), so a retry can't double-send.
+          "Idempotency-Key": `forward-${resendEmailId}`,
+        },
+        body: JSON.stringify({
+          from: forwardFromHeader(from, forwardAddress),
+          to: [target.to],
+          reply_to: from,
+          subject: email.subject ?? target.subject,
+          html: email.html ?? undefined,
+          text: email.text ?? (email.html ? undefined : ""),
+        }),
+      });
+      if (sent.ok) {
+        await ctx.runMutation(internal.inbound.markForwarded, { rowId });
+        return;
+      }
+      failure = `HTTP ${sent.status}`;
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
     }
-    await ctx.runMutation(internal.inbound.markForwarded, { rowId });
+  }
+
+  if (attempt < MAX_FORWARD_ATTEMPTS) {
+    await ctx.scheduler.runAfter(
+      FORWARD_RETRY_BASE_MS * 4 ** (attempt - 1),
+      internal.inbound.retryForward,
+      { rowId, resendEmailId, attempt: attempt + 1 },
+    );
+    return;
+  }
+  console.error(
+    `Resend forward gave up after ${attempt} attempts for ${resendEmailId}: ${failure}`,
+  );
+}
+
+/** Retry a failed forward: re-fetch the full email (stored bodies may be truncated) and send. */
+export const retryForward = internalAction({
+  args: { rowId: v.id("receivedEmails"), resendEmailId: v.string(), attempt: v.number() },
+  handler: async (ctx, { rowId, resendEmailId, attempt }) => {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error("RESEND_API_KEY is not set");
+    let email: ReceivedEmail | null = null;
+    try {
+      const res = await fetch(`${RESEND_RECEIVING_API}/${encodeURIComponent(resendEmailId)}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.ok) email = (await res.json()) as ReceivedEmail;
+    } catch {
+      // Counted as a failed attempt below.
+    }
+    await forwardOrScheduleRetry(ctx, { rowId, resendEmailId, apiKey, email, attempt });
   },
 });
 
