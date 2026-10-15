@@ -30,8 +30,8 @@ Every step below can be done in the four dashboards, with no local CLI:
   only dashboard settings are **Root Directory** = `web` and the environment variables. Add the
   Production key as `CONVEX_DEPLOY_KEY` for the **Production** environment only. Convex refuses
   a Production key in a Vercel Preview build ("Detected a non-production build environment"), so
-  branch previews fail until they get their own Preview deploy key; run the smoke test on a
-  Production deployment.
+  `web/vercel.json` skips (`ignoreCommand`) every build whose `VERCEL_ENV` is not `production`:
+  previews show as "Canceled", not failed. Run the smoke test on a Production deployment.
   `NEXT_PUBLIC_CONVEX_URL` is then set automatically during the build.
 - Run the smoke test on a Production deployment: merge this PR so `main` deploys, or promote a
   deployment of this branch to Production.
