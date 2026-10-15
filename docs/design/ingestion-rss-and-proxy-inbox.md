@@ -104,7 +104,10 @@ default, so the customer's inbox doesn't change.
 Required before launch:
 
 1. **Pass-through without storage.** Login codes and account mail are forwarded and never persisted. Only newsletter
-   issues are stored. A breach of our store must not yield Substack login codes.
+   issues are stored. A breach of our store must not yield Substack login codes. For account mail we keep only
+   metadata (sender, subject, time, forward status), so the dashboard can show "Substack confirmation arrived and was
+   forwarded" without holding the body. Decided 2026-10-15 over storing account mail briefly for the dashboard.
+   *Current gap:* the inbox in PR #71 still stores every body; SAT-1104 adds the classifier and stops it.
 2. **Verified sending domain** for forwards, on its own subdomain (C.3). Without it, forwarded login codes land in spam.
 3. **Bounded exit.** On cancellation we stop storing anything and stop forwarding newsletters at once. Account mail
    (login codes, email-change confirmations) keeps being forwarded for a **90-day grace period**, because the customer
@@ -115,14 +118,18 @@ Required before launch:
 5. **Writer warning.** For a Substack writer, the account email also receives reader replies and payout mail. Say so
    before they switch.
 6. **Classifier:** newsletter vs account mail must be deterministic (headers such as `List-Id`/`List-Unsubscribe`,
-   sender), and must fail open: when unsure, forward and don't store.
+   sender), and must fail open: when unsure, forward and don't store. It runs on our server; the customer never
+   creates a filter. Rules are derived from real Substack samples, not guessed.
+7. **Forward-failure alert.** We sit on the customer's Substack login path, so a failed forward (non-2xx from the
+   send API) alerts the operator immediately and is retried. A silent failure would lock a customer out.
 
 Flow:
 
 1. Dashboard shows the proxy address with **Copy** and a button that opens `https://substack.com/settings`.
 2. Customer clicks **Edit** next to **Email**, pastes the proxy, saves.
 3. Substack emails a confirmation to the new address (the proxy) and to the old one (see the API section below).
-   The dashboard shows the proxy-side confirmation immediately; the customer clicks the old-address one in their inbox.
+   The proxy-side confirmation is account mail: it is forwarded to the customer's inbox, and the dashboard shows only
+   that it arrived. The customer clicks both confirmations in their inbox.
 4. Publications appear on the dashboard as issues arrive, each with an include/exclude toggle for the Kindle digest.
 
 Fallbacks: option B for readers who won't change their Substack email; RSS for free publications added by URL and
