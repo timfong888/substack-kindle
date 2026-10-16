@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npx convex deploy --cmd 'npm run build'",
-  "ignoreCommand": "[ \"$VERCEL_ENV\" != \"production\" ]"
+  "ignoreCommand": "[ \"$VERCEL_ENV\" != \"production\" ] && [ -n \"$VERCEL_GIT_COMMIT_REF\" ] && [ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ]"
 }
