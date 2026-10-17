@@ -5,8 +5,8 @@
 # push/PR — only via the "Run workflow" button (workflow_dispatch).
 #
 # Required repository secrets:
-#   POSTMARK_SERVER_TOKEN      Postmark server token
-#   WHITELIST_EMAIL            verified Postmark sender (distinct local-part)
+#   RESEND_API_KEY             Resend API key
+#   WHITELIST_EMAIL            sender on the Resend-verified domain (distinct local-part)
 #   KINDLE_EMAIL               Kindle delivery address
 #   FEEDS_JSON                 full contents of feeds.json
 #                              ({"feeds": ["https://<pub>.substack.com/feed", ...]})
@@ -55,10 +55,10 @@ jobs:
         run: |
           printf '%s' "$FEEDS_JSON" > "$RUNNER_TEMP/feeds.json"
 
-      - name: Live e2e (real RSS fetch + real Postmark send to Kindle)
+      - name: Live e2e (real RSS fetch + real Resend send to Kindle)
         env:
           RUN_LIVE_E2E: "1"
-          POSTMARK_SERVER_TOKEN: ${{ secrets.POSTMARK_SERVER_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           WHITELIST_EMAIL: ${{ secrets.WHITELIST_EMAIL }}
           KINDLE_EMAIL: ${{ secrets.KINDLE_EMAIL }}
           FEEDS_PATH: ${{ runner.temp }}/feeds.json

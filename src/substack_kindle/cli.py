@@ -1,4 +1,4 @@
-"""Production end-to-end CLI: RSS → EPUB → Postmark (SAT-330).
+"""Production end-to-end CLI: RSS → EPUB → Resend (SAT-330).
 
 Wires the existing modules into a single per-run command:
 
@@ -10,8 +10,8 @@ from a feed registry (``feeds.json``).
 
 Required env (matching ``runner.load_runtime_config`` plus a kindle target):
 
-    POSTMARK_SERVER_TOKEN
-    WHITELIST_EMAIL    # Verified Postmark sender signature; local-part MUST
+    RESEND_API_KEY
+    WHITELIST_EMAIL    # Sender on the Resend-verified domain; local-part MUST
                        # differ from the Kindle address local-part to avoid
                        # Amazon's verification trap (SAT-270 research).
     KINDLE_EMAIL
@@ -32,7 +32,7 @@ from datetime import UTC, datetime, time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import postmark, postmark_transport
+from . import http_transport, resend
 from .digest_title import format_digest_title
 from .job_epub import build_job_epub
 from .pipeline import ON_DEMAND, run_job
@@ -41,8 +41,7 @@ from .rss_fetch import fetch_posts
 from .service_version import service_subheader
 from .whitelist_check import ensure_distinct_local_parts
 
-POSTMARK_URL = "https://api.postmarkapp.com/email"
-REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
+REQUIRED_ENV = ("RESEND_API_KEY", "WHITELIST_EMAIL", "KINDLE_EMAIL")
 DEFAULT_FEEDS_PATH = "~/.config/substack-kindle/feeds.json"
 DEFAULT_STATE_PATH = Path("~/.config/substack-kindle/state.json")
 
@@ -71,14 +70,14 @@ def _validate_feed_url(url: str) -> None:
 
 @dataclass(frozen=True)
 class CliConfig:
-    postmark_server_token: str
+    resend_api_key: str
     whitelist_email: str
     kindle_email: str
     feeds_path: Path
 
     def __repr__(self) -> str:
         return (
-            "CliConfig(postmark_server_token='***redacted***', "
+            "CliConfig(resend_api_key='***redacted***', "
             f"whitelist_email={self.whitelist_email!r}, "
             f"kindle_email={self.kindle_email!r}, "
             f"feeds_path={self.feeds_path})"
@@ -90,7 +89,7 @@ def _load_config(env: Mapping[str, str]) -> CliConfig:
     if missing:
         raise RuntimeError(f"missing required env: {', '.join(missing)}")
     return CliConfig(
-        postmark_server_token=env["POSTMARK_SERVER_TOKEN"],
+        resend_api_key=env["RESEND_API_KEY"],
         whitelist_email=env["WHITELIST_EMAIL"],
         kindle_email=env["KINDLE_EMAIL"],
         feeds_path=Path(env.get("FEEDS_PATH") or DEFAULT_FEEDS_PATH).expanduser(),
@@ -215,13 +214,13 @@ def main(
         )
 
     def _send(epub_bytes):
-        return postmark.send_epub(
+        return resend.send_epub(
             epub_bytes=epub_bytes,
             to=config.kindle_email,
             from_=config.whitelist_email,
             filename=attachment_name,
-            server_token=config.postmark_server_token,
-            http_post=lambda url, **kwargs: postmark_transport.post(
+            api_key=config.resend_api_key,
+            http_post=lambda url, **kwargs: http_transport.post(
                 url, http_post=http_post, **kwargs
             ),
         )

@@ -16,19 +16,19 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL")
+REQUIRED_ENV = ("RESEND_API_KEY", "WHITELIST_EMAIL")
 
 
 @dataclass
 class RuntimeConfig:
     """Runtime config resolved from the environment. The token is redacted in repr."""
 
-    postmark_server_token: str
+    resend_api_key: str
     whitelist_email: str
 
     def __repr__(self) -> str:
         return (
-            "RuntimeConfig(postmark_server_token='***redacted***', "
+            "RuntimeConfig(resend_api_key='***redacted***', "
             f"whitelist_email={self.whitelist_email!r})"
         )
 
@@ -39,7 +39,7 @@ def load_runtime_config(env: Mapping[str, str]) -> RuntimeConfig:
     if missing:
         raise RuntimeError(f"missing required runtime config: {', '.join(missing)}")
     return RuntimeConfig(
-        postmark_server_token=env["POSTMARK_SERVER_TOKEN"],
+        resend_api_key=env["RESEND_API_KEY"],
         whitelist_email=env["WHITELIST_EMAIL"],
     )
 

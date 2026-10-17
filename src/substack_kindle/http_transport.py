@@ -1,10 +1,10 @@
-"""HTTP transport adapter for ``postmark.send_epub`` (SAT-269).
+"""HTTP transport adapter for ``resend.send_epub`` (SAT-269).
 
-``postmark.send_epub`` takes its HTTP caller as a parameter so it can stay free
+``resend.send_epub`` takes its HTTP caller as a parameter so it can stay free
 of any concrete client. This module provides the production adapter — a thin
 shim over ``httpx.post`` — and a way to inject any callable (``httpx.post``,
 ``requests.post``, or a fake) for tests. The shim does NOT interpret the
-response; the sender already handles non-2xx and Postmark error codes.
+response; the sender already handles non-2xx and Resend error responses.
 
 The adapter exists as its own module (rather than a single line in cli.py) so
 the dependency on httpx is contained in one place and easy to swap.
@@ -15,7 +15,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-DEFAULT_TIMEOUT_SECONDS = 30.0
+# Resend accepts up to 40 MB post-base64, so a large digest is a ~50 MB JSON
+# body; give the upload room before httpx gives up.
+DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 def post(

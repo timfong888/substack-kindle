@@ -16,7 +16,7 @@ Usage:
             )
         ],
         book_title="Newsletter Digest: June 5 2026",
-        postmark_server_token=os.environ["POSTMARK_SERVER_TOKEN"],
+        resend_api_key=os.environ["RESEND_API_KEY"],
         whitelist_email=os.environ["WHITELIST_EMAIL"],
         kindle_email=os.environ["KINDLE_EMAIL"],
         http_post=requests.post,
@@ -34,8 +34,8 @@ from .email_headers import sender_display_name
 from .ids import newsletter_id as _newsletter_id
 from .job_epub import JobSection, build_job_epub
 from .parsing import html_to_markdown
-from .postmark import send_epub
 from .processed_state import ProcessedStateStore
+from .resend import send_epub
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def process_messages(
     messages: list[InboundMessage],
     *,
     book_title: str,
-    postmark_server_token: str,
+    resend_api_key: str,
     whitelist_email: str,
     kindle_email: str,
     http_post: Callable[..., Any],
@@ -74,8 +74,8 @@ def process_messages(
         messages: Pre-fetched newsletter messages. HTML bodies are run through
             the full parse pipeline (Substack chrome stripper + html_to_markdown).
         book_title: EPUB dc:title; typically a date-range string.
-        postmark_server_token: Postmark server token for the outbound stream.
-        whitelist_email: Verified Postmark sender; must be on Amazon's approved list.
+        resend_api_key: Resend API key for the sending domain.
+        whitelist_email: Sender on the Resend-verified domain; must be on Amazon's approved list.
         kindle_email: Destination Kindle address.
         http_post: Injected HTTP POST callable (use ``requests.post`` in production).
         subtitle: Optional service-version string written to dc:description and
@@ -85,7 +85,7 @@ def process_messages(
 
     Returns:
         HandlerResult with status "ok" (sent), "empty" (nothing to send), or
-        raises PostmarkError on send failure (caller decides whether to retry).
+        raises ResendError on send failure (caller decides whether to retry).
     """
     sections: list[JobSection] = []
     ids_to_mark: list[str] = []
@@ -116,7 +116,7 @@ def process_messages(
         to=kindle_email,
         from_=whitelist_email,
         filename=f"{book_title}.epub",
-        server_token=postmark_server_token,
+        api_key=resend_api_key,
         http_post=http_post,
     )
 

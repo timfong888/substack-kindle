@@ -165,18 +165,17 @@ Stored as data from day one — one row in the MVP, scalable to many customers.
 - **Provider:** Resend. Verified sending domain (SPF + DKIM) for `whitelist_email`.
 - **Credentials:** `RESEND_API_KEY` and sender address supplied at runtime via env/secrets manager only, never committed (see S1a).
 - **EPUB send path:** Resend's `POST /emails` accepts an `attachments` array (base64 `content` + `filename`, or a `path` URL). Use it directly from the injected transport, same as the Postmark transport today.
-- **Size limit:** Resend's documented per-email limit is 40 MB including attachments *after* base64 encoding (**verify against current Resend docs before relying on it**). Base64 inflates size by ~4/3, so the usable raw EPUB ceiling is ~30 MB. `size_budget.py` already takes a post-base64 cap and derives the raw limit (`_max_raw_bytes`), so the migration replaces `POSTMARK_MAX_MESSAGE_BYTES` (10 MB) with a 40 MB post-encoding constant; do **not** treat 40 MB as a raw-file budget. Amazon's 50 MB cap is not the binding constraint.
+- **Size limit:** Resend's per-email limit is 40 MB including attachments *after* base64 encoding (confirmed against the Resend API reference, 2026-10-17). Base64 inflates size by ~4/3, so the usable raw EPUB ceiling is ~30 MB. `size_budget.RESEND_MAX_MESSAGE_BYTES` is that 40 MB post-encoding cap and `_max_raw_bytes` derives the raw limit; do **not** treat 40 MB as a raw-file budget. Amazon's 50 MB cap is not the binding constraint. Note: `plan_send` is not yet wired into the send path (pre-existing gap; an oversize EPUB fails loudly at Resend).
 - **Inbound:** received mail counts against the same monthly quota as sent mail, and self-serve plans retain email data for 30 days. The service must persist what it needs (Markdown per requirement 15) rather than rely on Resend retention.
 - **Inbound webhooks:** the `email.received` webhook carries metadata only. Body, headers and attachments are fetched separately through the Received Emails / Attachments API.
 - **MCP:** Resend publishes an MCP server. Use it only if it fits; the EPUB send stays on the REST API through the injected transport (same pattern as before, keeps "all I/O injected").
 
-**Migration impact (not yet done):**
-- `postmark.py`, `postmark_transport.py`, `size_budget.py`, `cli.py`, `handler.py`, related tests, `.env.example`, `SECURITY.md`, README and CLAUDE.md reference Postmark.
+**Migration (done 2026-10-17):** `resend.py` replaces `postmark.py`; the httpx shim is `http_transport.py`; `size_budget.py` caps at 40 MB post-base64; `cli.py`, `handler.py`, `runner.py`, tests, `.env.example`, `SECURITY.md`, README and CLAUDE.md updated. MVP sending domain: `mail.fong888.com`.
 - If `whitelist_email` changes address or domain, every existing customer must re-add it to their Amazon approved list. Amazon drops unapproved mail silently, with no bounce. Keep the same `whitelist_email` string if possible.
 
 ### Superseded: Postmark
 
-Postmark was the original provider (10 MB total message cap; MCP `sendEmail` had no attachment support, so the EPUB used the `/email` REST API directly). Its code is still on `main` until the Resend migration lands.
+Postmark was the original provider (10 MB total message cap; MCP `sendEmail` had no attachment support, so the EPUB used the `/email` REST API directly). Removed 2026-10-17.
 
 ## Business model and unit costs
 
