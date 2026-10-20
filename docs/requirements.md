@@ -3,6 +3,15 @@
 > **Status:** Living document. This is the source of truth for product requirements.
 > Design explorations that may change these requirements live in [`docs/design/`](design/).
 >
+> **Revision 2026-10-20**
+> - Ingestion: the Resend proxy inbox is replaced by a **Google Workspace intake mailbox** we own
+>   (`substack+<code>@fong888.com`), read by a service account; pass-through is **Gmail-native forwarding** so the
+>   customer receives the original newsletter. Resend is send-only (the EPUB). Convex stays for users/auth and as the
+>   MVP email store behind a swappable Python interface. See [`design/intake-mailbox.md`](design/intake-mailbox.md).
+>   Requirements 1 and 13 and the "Gmail path removed" note are amended by that doc: it reads **our** mailbox, not the
+>   customer's, so no restricted-scope review applies.
+> - Hosting for the daily jobs: GitHub Actions (SAT-1105).
+>
 > **Revision 2026-10-10**
 > - Onboarding: the customer changes their Substack account email to their proxy address, with full pass-through
 >   to their real inbox. This is now the primary path; forward rules and RSS are fallbacks. See the decision in
