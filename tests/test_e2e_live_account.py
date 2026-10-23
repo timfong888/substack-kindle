@@ -1,8 +1,8 @@
 """Live account-level end-to-end test (opt-in, real I/O).
 
 Unlike ``test_e2e_serverless.py`` — which exercises the pipeline with a mocked
-Postmark and synthetic HTML — this test drives the REAL ``cli.main`` with no
-injected seams: real RSS feed fetch, real EPUB build, real Postmark send to
+Resend and synthetic HTML — this test drives the REAL ``cli.main`` with no
+injected seams: real RSS feed fetch, real EPUB build, real Resend send to
 the real Kindle address configured in ``.env``. It is the "does my actual
 account work end to end" check.
 
@@ -21,7 +21,7 @@ Credentials come from the process environment, never the repo. A remote agent
 (CI, cloud runner) injects the secrets as env vars and points at a materialized
 feed registry:
 
-    POSTMARK_SERVER_TOKEN, WHITELIST_EMAIL, KINDLE_EMAIL  # injected secrets
+    RESEND_API_KEY, WHITELIST_EMAIL, KINDLE_EMAIL  # injected secrets
     FEEDS_PATH               # feed registry JSON ({"feeds": [...]})
 
 Locally, a gitignored ``.env`` overlays the environment for convenience. This
@@ -46,7 +46,7 @@ from substack_kindle.cli import main
 
 _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 _REAL_STATE_PATH = Path("~/.config/substack-kindle/state.json").expanduser()
-_REQUIRED_ENV = ("POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL", "KINDLE_EMAIL")
+_REQUIRED_ENV = ("RESEND_API_KEY", "WHITELIST_EMAIL", "KINDLE_EMAIL")
 
 
 def _load_dotenv(path: Path) -> dict[str, str]:
@@ -84,7 +84,7 @@ def _default_window() -> tuple[str, str]:
     ),
 )
 def test_live_account_delivers_digest_to_kindle(tmp_path, capsys):
-    """Real RSS → EPUB → Postmark send to the configured Kindle address."""
+    """Real RSS → EPUB → Resend send to the configured Kindle address."""
     env = _resolve_env()
     missing = [k for k in _REQUIRED_ENV if not env.get(k)]
     if missing:

@@ -59,8 +59,8 @@ def test_send_test_document_sends_known_epub():
 
 def test_send_failure_propagates_and_does_not_mark_sent():
     gate = DeliveryGate()
-    spy = SendSpy(error=RuntimeError("postmark rejected"))
-    with pytest.raises(RuntimeError, match="postmark rejected"):
+    spy = SendSpy(error=RuntimeError("resend rejected"))
+    with pytest.raises(RuntimeError, match="resend rejected"):
         _send(gate, spy)
     assert gate.test_sent is False  # failure surfaced, not a silent success
 
@@ -72,7 +72,7 @@ def test_scheduled_runs_blocked_until_confirmed():
 
 
 def test_send_success_alone_does_not_enable_scheduled_runs():
-    # Catches the silent-drop mode: Postmark accepting the mail is not proof the
+    # Catches the silent-drop mode: Resend accepting the mail is not proof the
     # Kindle received it (whitelist may be unset) — confirmation is still required.
     gate = DeliveryGate()
     _send(gate, SendSpy())

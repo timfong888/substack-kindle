@@ -1,6 +1,6 @@
-"""Keep sends under Postmark's 10 MB message cap (SAT-251 / PRD §Constraints).
+"""Keep sends under Resend's 40 MB message cap (SAT-251 / PRD §Constraints).
 
-Postmark caps a whole message at 10 MB, and attachments are base64-encoded
+Resend caps a whole message at 40 MB after base64 encoding of attachments
 (~33% larger). ``plan_send`` makes an oversized EPUB deliverable instead of
 silently dropped: it first tries ZIP compression, and if a single message still
 won't fit it splits the payload into numbered parts that each fit under the cap
@@ -14,7 +14,7 @@ import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 
-POSTMARK_MAX_MESSAGE_BYTES = 10 * 1024 * 1024
+RESEND_MAX_MESSAGE_BYTES = 40 * 1024 * 1024
 EPUB_CONTENT_TYPE = "application/epub+zip"
 ZIP_CONTENT_TYPE = "application/zip"
 
@@ -51,7 +51,7 @@ class SendPlan:
 def plan_send(
     payload: bytes,
     *,
-    max_message_bytes: int = POSTMARK_MAX_MESSAGE_BYTES,
+    max_message_bytes: int = RESEND_MAX_MESSAGE_BYTES,
     filename: str = "job.epub",
 ) -> SendPlan:
     """Return a SendPlan whose every part fits under ``max_message_bytes`` post-base64."""

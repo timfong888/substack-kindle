@@ -6,7 +6,7 @@ This repository is **public**. The policy below is non-negotiable.
 
 The following are NEVER committed:
 
-- Postmark (transactional email / `whitelist_email`) credentials
+- Resend (transactional email / `whitelist_email`) credentials
 - Any per-customer config values (Kindle addresses, recipient emails, tokens)
 - Any API key, password, or private key of any kind
 

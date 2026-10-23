@@ -46,8 +46,8 @@ _CONTENT_MARKERS = (
 _CHROME_MARKERS = ("substackcdn.com", "Forwarded this email", "spacer.png")
 
 
-class _PostmarkSpy:
-    """Captures the Postmark call and returns a canned 200 OK."""
+class _ResendSpy:
+    """Captures the Resend call and returns a canned 200 OK."""
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -57,7 +57,7 @@ class _PostmarkSpy:
 
         @staticmethod
         def json() -> dict:
-            return {"MessageID": "msg-test", "ErrorCode": 0, "Message": "OK"}
+            return {"id": "msg-test"}
 
         text = ""
 
@@ -68,7 +68,7 @@ class _PostmarkSpy:
 
 def _deliver_fixture() -> bytes:
     """Run the edge-case fixture through the full pipeline; return the EPUB bytes."""
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     msg = InboundMessage(
         sender="digest@substack.com",
         subject="Markets Weekly — June 2026",
@@ -79,13 +79,13 @@ def _deliver_fixture() -> bytes:
     result = process_messages(
         [msg],
         book_title="Acceptance Digest",
-        postmark_server_token="test-token",
+        resend_api_key="test-token",
         whitelist_email="digest@example.com",
         kindle_email="reader@kindle.com",
         http_post=spy,
     )
     assert result.status == "ok"
-    return base64.b64decode(spy.calls[-1]["json"]["Attachments"][0]["Content"])
+    return base64.b64decode(spy.calls[-1]["json"]["attachments"][0]["content"])
 
 
 def _section_bodies(epub: bytes) -> list[str]:

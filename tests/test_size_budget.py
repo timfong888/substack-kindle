@@ -1,4 +1,4 @@
-"""Tests for the Postmark 10 MB size budget (SAT-251 / #15, PRD §Constraints).
+"""Tests for the Resend 40 MB size budget (SAT-251 / #15, PRD §Constraints).
 
 Acceptance:
 - A compiled EPUB approaching the cap (post-base64) is split or ZIPped before send.
@@ -13,7 +13,7 @@ from io import BytesIO
 import pytest
 
 from substack_kindle.size_budget import (
-    POSTMARK_MAX_MESSAGE_BYTES,
+    RESEND_MAX_MESSAGE_BYTES,
     base64_encoded_size,
     plan_send,
 )
@@ -23,8 +23,10 @@ def _b64_len(part: bytes) -> int:
     return len(base64.b64encode(part))
 
 
-def test_default_cap_is_10mb():
-    assert POSTMARK_MAX_MESSAGE_BYTES == 10 * 1024 * 1024
+def test_default_cap_is_40mb_post_base64():
+    # Resend's limit is on the whole message after base64 encoding, so this is
+    # not a raw-file budget (usable raw EPUB is ~30 MB).
+    assert RESEND_MAX_MESSAGE_BYTES == 40 * 1024 * 1024
 
 
 def test_base64_encoded_size_matches_stdlib():

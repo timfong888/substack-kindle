@@ -15,7 +15,7 @@ import substack_kindle.runner as runner_mod
 from substack_kindle.runner import RuntimeConfig, load_runtime_config, run_once
 
 FULL_ENV = {
-    "POSTMARK_SERVER_TOKEN": "tok-123",
+    "RESEND_API_KEY": "tok-123",
     "WHITELIST_EMAIL": "kindle-system@whitelist.example",
 }
 
@@ -23,11 +23,11 @@ FULL_ENV = {
 def test_load_runtime_config_reads_env():
     config = load_runtime_config(FULL_ENV)
     assert isinstance(config, RuntimeConfig)
-    assert config.postmark_server_token == "tok-123"
+    assert config.resend_api_key == "tok-123"
     assert config.whitelist_email == "kindle-system@whitelist.example"
 
 
-@pytest.mark.parametrize("missing", ["POSTMARK_SERVER_TOKEN", "WHITELIST_EMAIL"])
+@pytest.mark.parametrize("missing", ["RESEND_API_KEY", "WHITELIST_EMAIL"])
 def test_missing_required_config_raises_listing_key(missing):
     env = {k: v for k, v in FULL_ENV.items() if k != missing}
     with pytest.raises(RuntimeError) as exc:
@@ -36,12 +36,12 @@ def test_missing_required_config_raises_listing_key(missing):
 
 
 def test_blank_value_counts_as_missing():
-    env = dict(FULL_ENV, POSTMARK_SERVER_TOKEN="")
+    env = dict(FULL_ENV, RESEND_API_KEY="")
     with pytest.raises(RuntimeError):
         load_runtime_config(env)
 
 
-def test_repr_redacts_server_token():
+def test_repr_redacts_api_key():
     config = load_runtime_config(FULL_ENV)
     assert "tok-123" not in repr(config)
     assert "redacted" in repr(config).lower()
@@ -68,7 +68,7 @@ def test_module_has_no_hardcoded_credentials():
         source = fh.read().lower()
     assert "tok-" not in source
     # Normalize whitespace so an irregularly-spaced literal assignment is still caught.
-    assert "postmark_server_token =" not in re.sub(r"\s+", " ", source)
+    assert "resend_api_key =" not in re.sub(r"\s+", " ", source)
 
 
 def test_runner_has_no_loop_construct():

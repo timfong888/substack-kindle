@@ -126,9 +126,9 @@ def test_send_failure_records_failed_outcome_and_reraises():
     h = Harness([_NL("a")])
 
     def boom(_epub):
-        raise RuntimeError("postmark down")
+        raise RuntimeError("resend down")
 
-    with pytest.raises(RuntimeError, match="postmark down"):
+    with pytest.raises(RuntimeError, match="resend down"):
         run_job(
             start_date=_dt(1), end_date=_dt(5), trigger=ON_DEMAND,
             collect=h.collect, dedup=h.dedup, build_epub=h.build_epub, send=boom, record=h.record,
@@ -158,13 +158,13 @@ def test_record_failure_does_not_mask_original_pipeline_error():
     h = Harness([_NL("a")])
 
     def boom(_epub):
-        raise RuntimeError("postmark down")
+        raise RuntimeError("resend down")
 
     def bad_record(_result):
         raise RuntimeError("recorder exploded")
 
     # The original pipeline error must surface, not the recorder's.
-    with pytest.raises(RuntimeError, match="postmark down"):
+    with pytest.raises(RuntimeError, match="resend down"):
         run_job(
             start_date=_dt(1), end_date=_dt(5), trigger=ON_DEMAND,
             collect=h.collect, dedup=h.dedup, build_epub=h.build_epub, send=boom, record=bad_record,

@@ -1,7 +1,7 @@
 """End-to-end wiring test for the production CLI (SAT-330).
 
 Proves ``cli.main`` threads env config + dates through the pipeline with the
-real composition of collaborators — RSS fetch → dedup → build_epub → postmark
+real composition of collaborators — RSS fetch → dedup → build_epub → resend
 send — using injected fakes for the RSS fetch and the HTTP transport. No live
 network calls (the free-Substack path ingests via RSS feeds).
 """
@@ -28,7 +28,7 @@ def _post(guid, title, markdown, *, sender="Example Publication"):
 
 
 class _RecordingHttpxPost:
-    """Captures the Postmark request; returns a canned success response."""
+    """Captures the Resend request; returns a canned success response."""
 
     def __init__(self):
         self.calls = []
@@ -38,7 +38,7 @@ class _RecordingHttpxPost:
 
         @staticmethod
         def json():
-            return {"MessageID": "msg-1", "ErrorCode": 0, "Message": "OK"}
+            return {"id": "msg-1"}
 
         text = ""
 
@@ -53,7 +53,7 @@ def _env(**overrides):
     # Neutral fixture values — the real production values live in env at run
     # time. See .env.example for the documented WHITELIST_EMAIL constraint.
     base = {
-        "POSTMARK_SERVER_TOKEN": "postmark-token",
+        "RESEND_API_KEY": "re_test_key",
         "WHITELIST_EMAIL": "digest@example.com",
         "KINDLE_EMAIL": "reader@kindle.com",
     }
@@ -61,7 +61,7 @@ def _env(**overrides):
     return base
 
 
-def test_main_wires_rss_fetch_to_postmark_with_correct_metadata(monkeypatch, tmp_path):
+def test_main_wires_rss_fetch_to_resend_with_correct_metadata(monkeypatch, tmp_path):
     posts = [
         _post("guid-1", "Newer Post", "# Newer\n\nBody 1."),
         _post("guid-2", "Older Post", "# Older\n\nBody 2."),
@@ -96,23 +96,23 @@ def test_main_wires_rss_fetch_to_postmark_with_correct_metadata(monkeypatch, tmp
     assert seen["kwargs"]["feed_urls"] == _FEEDS
     assert seen["kwargs"]["window_start"].date().isoformat() == "2026-06-14"
     assert seen["kwargs"]["window_end"].date().isoformat() == "2026-06-24"
-    # Postmark received the call: correct URL, From (whitelist), To (kindle),
-    # EPUB attachment, server token in headers.
+    # Resend received the call: correct URL, from (whitelist), to (kindle),
+    # EPUB attachment, bearer key in headers.
     assert len(recorder.calls) == 1
     call = recorder.calls[0]
-    assert call["url"] == "https://api.postmarkapp.com/email"
-    assert call["json"]["From"] == "digest@example.com"
-    assert call["json"]["To"] == "reader@kindle.com"
-    assert call["headers"]["X-Postmark-Server-Token"] == "postmark-token"
-    assert len(call["json"]["Attachments"]) == 1
-    attachment = call["json"]["Attachments"][0]
-    assert attachment["ContentType"] == "application/epub+zip"
-    assert attachment["Name"].endswith(".epub")
+    assert call["url"] == "https://api.resend.com/emails"
+    assert call["json"]["from"] == "digest@example.com"
+    assert call["json"]["to"] == ["reader@kindle.com"]
+    assert call["headers"]["Authorization"] == "Bearer re_test_key"
+    assert len(call["json"]["attachments"]) == 1
+    attachment = call["json"]["attachments"][0]
+    assert attachment["content_type"] == "application/epub+zip"
+    assert attachment["filename"].endswith(".epub")
 
 
 def test_main_embeds_subheader_in_produced_epub(monkeypatch, tmp_path):
     """End-to-end guard: the SAT-272 subheader must flow from cli.main all the
-    way through to the EPUB bytes Postmark receives — both as ``dc:description``
+    way through to the EPUB bytes Resend receives — both as ``dc:description``
     in the OPF and as the H4 line on the front-matter chapter.
     """
     import base64
@@ -136,8 +136,8 @@ def test_main_embeds_subheader_in_produced_epub(monkeypatch, tmp_path):
     )
     assert rc == 0
 
-    # Decode the EPUB bytes that Postmark would have sent.
-    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["Attachments"][0]["Content"])
+    # Decode the EPUB bytes that Resend would have sent.
+    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["attachments"][0]["content"])
     subheader = service_subheader()
 
     with zipfile.ZipFile(BytesIO(epub_bytes)) as zf:
@@ -189,7 +189,7 @@ def test_main_returns_zero_with_no_send_on_empty_window(monkeypatch):
         feeds=_FEEDS,
         http_post=recorder,
     )
-    # Empty job → succeeded/empty outcome → exit 0, no Postmark call.
+    # Empty job → succeeded/empty outcome → exit 0, no Resend call.
     assert rc == 0
     assert recorder.calls == []
 
@@ -198,7 +198,7 @@ def test_main_rejects_missing_required_env():
     with pytest.raises(RuntimeError, match="missing"):
         main(
             argv=["--start", "2026-06-14", "--end", "2026-06-24"],
-            env={"POSTMARK_SERVER_TOKEN": "tok"},  # WHITELIST_EMAIL, KINDLE_EMAIL missing
+            env={"RESEND_API_KEY": "tok"},  # WHITELIST_EMAIL, KINDLE_EMAIL missing
             feeds=_FEEDS,
             http_post=lambda *a, **k: None,
         )
@@ -227,9 +227,9 @@ def test_main_uses_substacks_title_format_in_attachment_name(monkeypatch, tmp_pa
         http_post=recorder,
         state_path=tmp_path / "state.json",
     )
-    # Filename embeds the date range so it's easy to spot in Postmark dashboards.
-    assert "2026-06-14" in recorder.calls[0]["json"]["Attachments"][0]["Name"]
-    assert "2026-06-24" in recorder.calls[0]["json"]["Attachments"][0]["Name"]
+    # Filename embeds the date range so it's easy to spot in the Resend dashboard.
+    assert "2026-06-14" in recorder.calls[0]["json"]["attachments"][0]["filename"]
+    assert "2026-06-24" in recorder.calls[0]["json"]["attachments"][0]["filename"]
 
 
 def test_main_dedups_on_guid_across_runs(monkeypatch, tmp_path):
@@ -293,7 +293,7 @@ def test_main_dedups_duplicate_guid_within_single_run(monkeypatch, tmp_path):
     assert rc == 0
     assert len(recorder.calls) == 1  # one epub sent, not skipped entirely
 
-    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["Attachments"][0]["Content"])
+    epub_bytes = base64.b64decode(recorder.calls[0]["json"]["attachments"][0]["content"])
     with zipfile.ZipFile(BytesIO(epub_bytes)) as zf:
         combined = b"".join(zf.read(n) for n in zf.namelist()).decode(
             "utf-8", errors="replace"

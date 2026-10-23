@@ -1,6 +1,6 @@
 """End-to-end serverless pipeline tests (SAT-281 / serverless architecture).
 
-Exercises the full pipeline — HTML parsing → EPUB build → mocked Postmark send —
+Exercises the full pipeline — HTML parsing → EPUB build → mocked Resend send —
 without any live I/O (no real HTTP). Tests are intentionally
 coarse-grained: each one exercises a whole feature path, not a single module.
 
@@ -73,8 +73,8 @@ _PLAIN_HTML = """\
 """
 
 
-class _PostmarkSpy:
-    """Captures Postmark HTTP calls; returns a canned 200 OK response."""
+class _ResendSpy:
+    """Captures Resend HTTP calls; returns a canned 200 OK response."""
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -84,7 +84,7 @@ class _PostmarkSpy:
 
         @staticmethod
         def json() -> dict:
-            return {"MessageID": "msg-test-1", "ErrorCode": 0, "Message": "OK"}
+            return {"id": "msg-test-1"}
 
         text = ""
 
@@ -94,16 +94,16 @@ class _PostmarkSpy:
 
 
 class _FailingPost:
-    """Always returns a Postmark 422 error (simulates account not approved)."""
+    """Always returns a Resend 422 error (simulates a rejected send)."""
 
     class _Resp:
         status_code = 422
 
         @staticmethod
         def json() -> dict:
-            return {"ErrorCode": 406, "Message": "Inactive recipient"}
+            return {"statusCode": 422, "name": "validation_error", "message": "Invalid `to` field"}
 
-        text = "Inactive recipient"
+        text = "Invalid `to` field"
 
     def __call__(self, *a, **kw) -> _Resp:
         return self._Resp()
@@ -124,19 +124,19 @@ def _msg(
 def _base_kwargs(**overrides) -> dict:
     base = dict(
         book_title="Newsletter Digest: June 4 2026",
-        postmark_server_token="test-token",
+        resend_api_key="test-token",
         whitelist_email="digest@example.com",
         kindle_email="reader@kindle.com",
-        http_post=_PostmarkSpy(),
+        http_post=_ResendSpy(),
     )
     base.update(overrides)
     return base
 
 
-def _epub_from_spy(spy: _PostmarkSpy) -> bytes:
-    """Decode the EPUB bytes from the last Postmark call's attachment."""
-    attachment = spy.calls[-1]["json"]["Attachments"][0]
-    return base64.b64decode(attachment["Content"])
+def _epub_from_spy(spy: _ResendSpy) -> bytes:
+    """Decode the EPUB bytes from the last Resend call's attachment."""
+    attachment = spy.calls[-1]["json"]["attachments"][0]
+    return base64.b64decode(attachment["content"])
 
 
 def _is_valid_epub(data: bytes) -> bool:
@@ -153,9 +153,9 @@ def _is_valid_epub(data: bytes) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def test_single_newsletter_delivers_valid_epub_to_postmark():
-    """Full pipeline: one HTML message → EPUB attachment → Postmark 200 → ok result."""
-    spy = _PostmarkSpy()
+def test_single_newsletter_delivers_valid_epub_to_resend():
+    """Full pipeline: one HTML message → EPUB attachment → Resend 200 → ok result."""
+    spy = _ResendSpy()
     result = process_messages(
         [_msg(_PLAIN_HTML, sender="lenny@substack.com", subject="Lenny's Newsletter #213")],
         **_base_kwargs(http_post=spy),
@@ -168,7 +168,7 @@ def test_single_newsletter_delivers_valid_epub_to_postmark():
 
 def test_multiple_newsletters_produce_one_epub_with_all_sections():
     """N newsletters → one EPUB attachment containing all N sections."""
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     messages = [
         _msg(_SUBSTACK_HTML, sender="token@substack.com", subject="Token Dispatch — June 4"),
         _msg(_PLAIN_HTML, sender="lenny@substack.com", subject="Lenny's Newsletter #213"),
@@ -207,7 +207,7 @@ def test_publication_derived_from_sender_appears_in_epub_body():
     """
     import re
 
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     process_messages(
         [_msg(_PLAIN_HTML, sender="ByteByteGo <alex@bytebytego.com>", subject="Weekly")],
         **_base_kwargs(http_post=spy),
@@ -226,7 +226,7 @@ def test_publication_derived_from_sender_appears_in_epub_body():
 def test_substack_html_chrome_is_stripped_from_epub_body():
     """Substack chrome (icon row, 'Read in app', 'Forwarded this email') must not
     appear in the delivered EPUB body — the SAT-265 cleaner must fire in the pipeline."""
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     process_messages(
         [_msg(_SUBSTACK_HTML, sender="token@substack.com", subject="Token Dispatch")],
         **_base_kwargs(http_post=spy),
@@ -247,7 +247,7 @@ def test_substack_html_chrome_is_stripped_from_epub_body():
 
 def test_table_html_delivers_epub_with_css_stylesheet():
     """An EPUB built from table-containing HTML must include the newsletter CSS file."""
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     process_messages(
         [_msg(_TABLE_HTML, sender="stats@example.com", subject="Weekly Stats")],
         **_base_kwargs(http_post=spy),
@@ -260,16 +260,16 @@ def test_table_html_delivers_epub_with_css_stylesheet():
     )
 
 
-def test_postmark_called_with_epub_content_type_and_kindle_recipient():
-    """Postmark payload must carry the correct To, From, ContentType, and token header."""
-    spy = _PostmarkSpy()
+def test_resend_called_with_epub_content_type_and_kindle_recipient():
+    """Resend payload must carry the correct to, from, content_type, and bearer header."""
+    spy = _ResendSpy()
     process_messages([_msg(_PLAIN_HTML)], **_base_kwargs(http_post=spy))
     payload = spy.calls[0]["json"]
     headers = spy.calls[0]["headers"]
-    assert payload["To"] == "reader@kindle.com"
-    assert payload["From"] == "digest@example.com"
-    assert payload["Attachments"][0]["ContentType"] == "application/epub+zip"
-    assert headers["X-Postmark-Server-Token"] == "test-token"
+    assert payload["to"] == ["reader@kindle.com"]
+    assert payload["from"] == "digest@example.com"
+    assert payload["attachments"][0]["content_type"] == "application/epub+zip"
+    assert headers["Authorization"] == "Bearer test-token"
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +277,8 @@ def test_postmark_called_with_epub_content_type_and_kindle_recipient():
 # ---------------------------------------------------------------------------
 
 
-def test_empty_message_list_returns_empty_result_without_postmark_call():
-    spy = _PostmarkSpy()
+def test_empty_message_list_returns_empty_result_without_resend_call():
+    spy = _ResendSpy()
     result = process_messages([], **_base_kwargs(http_post=spy))
     assert result.status == "empty"
     assert result.delivered == 0
@@ -287,7 +287,7 @@ def test_empty_message_list_returns_empty_result_without_postmark_call():
 
 def test_html_body_with_no_meaningful_text_is_skipped():
     """A message whose HTML produces empty markdown must not inflate the EPUB."""
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     result = process_messages(
         [_msg("   ", sender="noise@example.com", subject="Empty")],
         **_base_kwargs(http_post=spy),
@@ -301,11 +301,11 @@ def test_html_body_with_no_meaningful_text_is_skipped():
 # ---------------------------------------------------------------------------
 
 
-def test_postmark_4xx_raises_and_result_is_not_ok():
-    """A Postmark HTTP error must propagate so the caller can retry or alert."""
-    from substack_kindle.postmark import PostmarkError
+def test_resend_4xx_raises_and_result_is_not_ok():
+    """A Resend HTTP error must propagate so the caller can retry or alert."""
+    from substack_kindle.resend import ResendError
 
-    with pytest.raises(PostmarkError):
+    with pytest.raises(ResendError):
         process_messages(
             [_msg(_PLAIN_HTML)],
             **_base_kwargs(http_post=_FailingPost()),
@@ -328,7 +328,7 @@ def test_already_delivered_message_is_skipped_by_state_store():
     state = InMemoryProcessedStateStore()
     state.mark_delivered(nid)
 
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     result = process_messages([msg], **_base_kwargs(http_post=spy), state=state)
     assert result.status == "empty"
     assert spy.calls == []
@@ -343,6 +343,6 @@ def test_state_store_is_updated_after_successful_delivery():
     nid = newsletter_id(msg.sender, msg.date_sent.isoformat(), msg.subject)
 
     state = InMemoryProcessedStateStore()
-    spy = _PostmarkSpy()
+    spy = _ResendSpy()
     process_messages([msg], **_base_kwargs(http_post=spy), state=state)
     assert state.state_of(nid) is ProcessedState.DELIVERED

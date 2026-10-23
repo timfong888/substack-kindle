@@ -1,7 +1,7 @@
 """Onboarding test-delivery gate (SAT-255 / Onboarding step 6).
 
 Before scheduled runs are enabled, the customer sends a known test document
-end-to-end and confirms it arrived on their Kindle. A successful Postmark send is
+end-to-end and confirms it arrived on their Kindle. A successful Resend send is
 not sufficient — Amazon silently drops mail from a sender that isn't on the
 approved list, so only an explicit customer confirmation unlocks scheduled runs.
 The send function is injected (no live calls).

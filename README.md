@@ -1,7 +1,7 @@
 # substack-kindle
 
 Newsletter-to-Kindle service. Reads free Substacks from their canonical RSS feeds,
-converts them to EPUB deterministically, and delivers them to a Kindle via Postmark.
+converts them to EPUB deterministically, and delivers them to a Kindle via Resend.
 
 > **Status:** MVP scaffold. See the planning docs (PRD, system design, user stories)
 > in the owner's vault and the Linear project **Newsletter-to-Kindle** (team `SAT`).
@@ -13,7 +13,7 @@ A single window-parameterized pipeline runs for both scheduled and on-demand
 
 ```
 trigger → resolve [start,end] → collect posts from approved RSS feeds → dedup
-        → parse to Markdown → build one EPUB (TOC) → send via Postmark → notify → record
+        → parse to Markdown → build one EPUB (TOC) → send via Resend → notify → record
 ```
 
 - **Compute:** Claude Managed Agents (short, per-run sessions).

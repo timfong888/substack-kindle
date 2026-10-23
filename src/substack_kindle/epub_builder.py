@@ -21,7 +21,7 @@ import markdown as _markdown
 from bs4 import BeautifulSoup
 from ebooklib import epub
 
-# Per-EPUB image budget. Kept well under the Postmark 10 MB message cap (E2/SAT-251
+# Per-EPUB image budget. Kept well under the Resend 40 MB message cap (E2/SAT-251
 # enforces the overall send-size limit separately).
 DEFAULT_IMAGE_BUDGET_BYTES = 5 * 1024 * 1024
 
