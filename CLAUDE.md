@@ -1,6 +1,6 @@
 # substack-kindle
 
-RSS → EPUB → Kindle newsletter digest service. Reads approved newsletters from their RSS feeds, builds a single EPUB per daily window, delivers via Resend to the user's Kindle address. The Gmail path is removed; paid newsletters arrive by private feed or Resend inbound email, never by reading the customer's mailbox.
+Newsletter → EPUB → Kindle digest service. Newsletters arrive at a per-user address on a Google Workspace mailbox we own (`substack+<code>@fong888.com`, decided 2026-10-20 — see `docs/design/intake-mailbox.md`), are stored as Markdown, and go out once a day as a single EPUB via Resend to the user's Kindle. Pass-through to the customer's inbox is Gmail-native forwarding. Resend is send-only. We never read the customer's own mailbox. The RSS path (`cli.py`) remains for free publications. Implementation: SAT-1104 / SAT-1105.
 
 **Requirements and design docs:** [`docs/`](docs/README.md) — read `docs/requirements.md` before feature work.
 
