@@ -148,6 +148,19 @@ def test_repeated_authentication_results_uses_googles():
     assert decision.kind == "newsletter"
 
 
+@pytest.mark.parametrize(
+    "malformed", ["; dmarc=fail", "   ", ";", "dmarc=pass header.from=substack.com"]
+)
+def test_malformed_authentication_results_is_skipped_not_raised(malformed):
+    # A value with no authserv-id can't be Google's; it must not stop classification.
+    decision = accept(
+        _headers(**{"Authentication-Results": [malformed, AUTH_PASS]}), known_codes=_known()
+    )
+    assert decision.kind == "newsletter"
+    alone = accept(_headers(**{"Authentication-Results": malformed}), known_codes=_known())
+    assert alone.kind == "rejected"
+
+
 def test_header_from_must_be_the_apex_domain_exactly():
     subdomain = AUTH_PASS.replace("header.from=substack.com", "header.from=mg-d1.substack.com")
     decision = accept(_headers(**{"Authentication-Results": subdomain}), known_codes=_known())

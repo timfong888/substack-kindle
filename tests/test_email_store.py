@@ -41,9 +41,17 @@ def _email(**overrides) -> StoredEmail:
     return StoredEmail(**base)
 
 
+TARGETS = [
+    DeliveryTarget(user_code="tim-ab12cd34", kindle_email="reader@kindle.com"),
+    DeliveryTarget(user_code="pending-user", kindle_email=None),
+]
+
+
 @pytest.fixture
 def store() -> EmailStore:
-    return InMemoryEmailStore()
+    """The backend under test. Another backend overrides this fixture (and seeds
+    ``TARGETS`` into its users table) to run the same conformance suite."""
+    return InMemoryEmailStore(targets=TARGETS)
 
 
 # ---------------------------------------------------------------- put / exists
@@ -136,12 +144,16 @@ def test_undelivered_rejects_naive_or_inverted_window(store):
 
 def test_mark_delivered_is_idempotent_and_ignores_unknown_ids(store):
     store.put(_email(gmail_message_id="a"))
-    store.mark_delivered(["a", "missing"], delivered_at=T0 + timedelta(days=1))
+    first = T0 + timedelta(days=1)
+    store.mark_delivered(["a", "missing"], delivered_at=first)
     store.mark_delivered(["a"], delivered_at=T0 + timedelta(days=2))
     rows = store.undelivered(
         "tim-ab12cd34", since=T0 - timedelta(days=1), until=T0 + timedelta(days=1)
     )
     assert rows == []
+    # The first delivery time is kept: it is what retention counts from.
+    assert store.get("a").delivered_at == first
+    assert store.get("missing") is None
 
 
 def test_mark_delivered_rejects_naive_timestamp(store):
@@ -153,13 +165,7 @@ def test_mark_delivered_rejects_naive_timestamp(store):
 # ---------------------------------------------------------------- delivery targets
 
 
-def test_delivery_targets_lists_users_with_a_kindle_address_only():
-    store = InMemoryEmailStore(
-        targets=[
-            DeliveryTarget(user_code="tim-ab12cd34", kindle_email="reader@kindle.com"),
-            DeliveryTarget(user_code="pending-user", kindle_email=None),
-        ]
-    )
+def test_delivery_targets_lists_users_with_a_kindle_address_only(store):
     assert store.delivery_targets() == [
         DeliveryTarget(user_code="tim-ab12cd34", kindle_email="reader@kindle.com")
     ]
@@ -182,6 +188,8 @@ def test_purge_keys_on_delivery_time_and_keeps_metadata(store):
     assert purged == 1
     old = store.get("old")
     assert old is not None and old.markdown is None and old.subject  # metadata kept
+    assert old.markdown_bytes == 0  # the byte count describes the remaining body
+    assert old.delivered_at == T0 - timedelta(days=39)
     assert store.get("recent").markdown is not None
     assert store.get("late").markdown is not None
     # Never purge what has not been delivered yet, however old.

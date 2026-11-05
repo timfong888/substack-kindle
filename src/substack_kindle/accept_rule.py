@@ -91,8 +91,10 @@ def _user_code(delivered_to: str | None) -> str | None:
 def _google_auth_results(values: list[str]) -> str | None:
     """The Authentication-Results value whose authserv-id is Google's, if any."""
     for value in values:
-        authserv_id = value.split(";", 1)[0].strip().split()[0].lower() if value.strip() else ""
-        if authserv_id == GOOGLE_AUTHSERV_ID:
+        # RFC 8601: the value opens with the authserv-id, then ";"-separated results.
+        # A malformed value (e.g. "; dmarc=fail") has no id and is skipped, not raised.
+        tokens = value.split(";", 1)[0].split()
+        if tokens and tokens[0].lower() == GOOGLE_AUTHSERV_ID:
             return value
     return None
 
