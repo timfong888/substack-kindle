@@ -40,10 +40,13 @@ export function candidateFeedUrls(input: string): string[] {
   return page === `${origin}/feed` ? [page] : [`${origin}/feed`, page];
 }
 
-/** True when the start of a document is an RSS or Atom feed. */
+/**
+ * True when the start of a document is an RSS feed. Atom is refused: the digest
+ * runner reads RSS only (every Substack feed is RSS), so an Atom subscription
+ * would be saved but never deliver.
+ */
 export function looksLikeFeed(body: string): boolean {
-  const head = body.slice(0, 2000).toLowerCase();
-  return head.includes("<rss") || /<feed[\s>]/.test(head);
+  return body.slice(0, 2000).toLowerCase().includes("<rss");
 }
 
 const ENTITIES: Record<string, string> = {
@@ -74,7 +77,7 @@ export function findAlternateFeeds(html: string, pageUrl: string): string[] {
   const found: string[] = [];
   for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
     if (!/rel\s*=\s*["']?alternate/i.test(tag)) continue;
-    if (!/type\s*=\s*["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
+    if (!/type\s*=\s*["']?application\/rss\+xml/i.test(tag)) continue;
     const href = /href\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
     if (!href) continue;
     try {

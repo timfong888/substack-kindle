@@ -34,7 +34,7 @@ from urllib.parse import urljoin, urlsplit
 from . import http_transport, resend
 from .cover import CoverPost, render_cover
 from .job_epub import build_job_epub
-from .rss_fetch import fetch_posts
+from .rss_fetch import fetch_posts, parse_feed
 from .whitelist_check import ensure_distinct_local_parts
 
 LOOKBACK_DAYS = 7
@@ -45,6 +45,18 @@ REQUIRED_ENV = ("CONVEX_URL", "PIPELINE_SHARED_SECRET", "RESEND_API_KEY")
 
 class UnsafeUrlError(ValueError):
     """A feed URL is not a public https URL."""
+
+
+class AlreadySent(Exception):
+    """Resend already holds a send for this idempotency key (HTTP 409 on retry).
+
+    Raised by the send function when a previous run's email went out but its
+    delivery was not recorded; the runner then records it instead of failing.
+    """
+
+
+class FeedsUnavailable(Exception):
+    """None of a user's feeds could be read this run; retry next run."""
 
 
 class Convex(Protocol):
@@ -173,6 +185,20 @@ def _cover(posts: list[Any], now: datetime, publications: int) -> bytes | None:
         return None
 
 
+def _readable_feeds(urls: list[str], http_get: Callable[[str], bytes | str]) -> dict[str, Any]:
+    """Fetch and parse-check each feed; failures are counted, never logged with
+    their URL or error text (user-supplied URLs must not reach public logs)."""
+    good: dict[str, Any] = {}
+    for url in urls:
+        try:
+            body = http_get(url)
+            parse_feed(body)
+        except Exception:
+            continue
+        good[url] = body
+    return good
+
+
 def _digest_one(
     target: dict[str, Any],
     *,
@@ -181,15 +207,22 @@ def _digest_one(
     http_get: Callable[[str], bytes | str],
     send: SendFn,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> str:
     user_id = str(target["userId"])
     ensure_distinct_local_parts(
         whitelist_email=target["sender"], kindle_email=target["kindleEmail"]
     )
     delivered = set(target.get("deliveredKeys") or [])
+    urls = list(target["feedUrls"])
+    feeds = _readable_feeds(urls, http_get)
+    if urls and not feeds:
+        # Every feed failed (outage, timeouts): leave the request and the daily
+        # slot open so the next run retries, instead of recording "nothing new".
+        raise FeedsUnavailable(f"0 of {len(urls)} feeds readable")
     posts = fetch_posts(
-        http_get,
-        feed_urls=list(target["feedUrls"]),
+        feeds.__getitem__,
+        feed_urls=list(feeds),
         window_start=now - timedelta(days=LOOKBACK_DAYS),
         window_end=now,
     )
@@ -202,8 +235,8 @@ def _digest_one(
         fresh.append(p)
     fresh = sorted(fresh, key=lambda p: p.published)[-MAX_POSTS:]
 
-    issued = _ms(now)
     if not fresh:
+        issued = _ms(clock())  # signatures carry the time of the call itself
         convex.mutation(
             "digest:markNoDigest",
             {
@@ -225,13 +258,17 @@ def _digest_one(
         subtitle=f"{len(fresh)} posts from {publications} publications",
         cover_image=_cover(fresh, now, publications),
     )
-    send(
-        epub_bytes=epub_bytes,
-        to=target["kindleEmail"],
-        from_=target["sender"],
-        filename=f"substack-digest-{now:%Y-%m-%d}.epub",
-        idempotency_key=digest_key,
-    )
+    try:
+        send(
+            epub_bytes=epub_bytes,
+            to=target["kindleEmail"],
+            from_=target["sender"],
+            filename=f"substack-digest-{now:%Y-%m-%d}.epub",
+            idempotency_key=digest_key,
+        )
+    except AlreadySent:
+        pass  # an earlier run sent this exact post set; record it now
+    issued = _ms(clock())
     convex.mutation(
         "digest:recordDigest",
         {
@@ -261,9 +298,11 @@ def run_digests(
     http_get: Callable[[str], bytes | str],
     send: SendFn,
     now: datetime | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> DigestRunSummary:
-    now = now or datetime.now(UTC)
-    issued = _ms(now)
+    clock = clock or (lambda: datetime.now(UTC))
+    now = now or clock()  # the content window; signing uses clock() per call
+    issued = _ms(clock())
     targets = convex.query(
         "digest:targets",
         {"issuedAt": float(issued), "signature": sign(secret, f"digest-targets:{issued}")},
@@ -272,7 +311,13 @@ def run_digests(
     for target in targets:
         try:
             outcome = _digest_one(
-                target, convex=convex, secret=secret, http_get=http_get, send=send, now=now
+                target,
+                convex=convex,
+                secret=secret,
+                http_get=http_get,
+                send=send,
+                now=now,
+                clock=clock,
             )
         except Exception as exc:  # one user must not stop the rest
             summary.failed += 1
@@ -299,7 +344,16 @@ def main(env: Mapping[str, str] | None = None) -> int:
     api_key = env["RESEND_API_KEY"]
 
     def send(**kwargs: Any) -> str:
-        return resend.send_epub(api_key=api_key, http_post=http_transport.post, **kwargs).message_id
+        try:
+            return resend.send_epub(
+                api_key=api_key, http_post=http_transport.post, **kwargs
+            ).message_id
+        except resend.ResendError as exc:
+            # Same idempotency key, different bytes (EPUB timestamps): Resend
+            # already accepted this post set on an earlier run.
+            if "HTTP 409" in str(exc):
+                raise AlreadySent() from None
+            raise
 
     summary = run_digests(
         convex=ConvexHttp(env["CONVEX_URL"], httpx.post),

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from substack_kindle.digest_run import (
+    AlreadySent,
     ConvexHttp,
     UnsafeUrlError,
     check_public_https_url,
@@ -98,6 +99,7 @@ def _run(convex, send, feeds=None):
         http_get=lambda url: feeds[url],
         send=send,
         now=NOW,
+        clock=lambda: NOW,
     )
 
 
@@ -275,3 +277,66 @@ def test_convex_http_raises_on_an_error_status():
     )
     with pytest.raises(RuntimeError, match="Unauthorized"):
         client.mutation("digest:recordDigest", {})
+
+
+# ---------------------------------------------------------------- resilience
+
+
+def test_all_feeds_unreadable_is_a_failure_not_an_empty_digest():
+    convex = FakeConvex([_target()])
+    send = FakeSender()
+
+    def down(url):
+        raise TimeoutError("timed out")
+
+    summary = run_digests(
+        convex=convex, secret=SECRET, http_get=down, send=send, now=NOW, clock=lambda: NOW
+    )
+    assert summary.failed == 1 and summary.empty == 0
+    assert convex.mutations == []  # request and daily slot stay open for a retry
+
+
+def test_feed_failures_never_log_the_url_or_error_text(capsys):
+    secret_url = "https://b.example.com/feed?token=private-value"
+    convex = FakeConvex([_target(feedUrls=["https://a.example.com/feed", secret_url])])
+
+    def get(url):
+        if url == secret_url:
+            raise RuntimeError(f"boom {url}")
+        return FEED_A
+
+    run_digests(
+        convex=convex, secret=SECRET, http_get=get, send=FakeSender(), now=NOW, clock=lambda: NOW
+    )
+    err = capsys.readouterr()
+    assert "private-value" not in err.err + err.out
+    assert "b.example.com" not in err.err + err.out
+
+
+def test_signatures_use_the_time_of_each_call_not_the_batch_start():
+    convex = FakeConvex([_target()])
+    ticks = iter([NOW, NOW.replace(minute=30)])  # targets query, then the record call
+
+    run_digests(
+        convex=convex,
+        secret=SECRET,
+        http_get=lambda url: FEED_A,
+        send=FakeSender(),
+        now=NOW,
+        clock=lambda: next(ticks),
+    )
+    _, args = convex.mutations[0]
+    later = int(NOW.replace(minute=30).timestamp() * 1000)
+    assert int(args["issuedAt"]) == later
+    assert args["signature"] == sign(SECRET, f"record-digest:user1:{args['digestKey']}:{later}")
+
+
+def test_an_email_already_sent_on_an_earlier_run_is_recorded_not_failed():
+    convex = FakeConvex([_target()])
+
+    def send(**kwargs):
+        raise AlreadySent()
+
+    summary = _run(convex, send)
+    assert summary.sent == 1 and summary.failed == 0
+    assert convex.mutations[0][0] == "digest:recordDigest"

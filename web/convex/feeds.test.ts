@@ -47,9 +47,9 @@ describe("candidateFeedUrls", () => {
 });
 
 describe("looksLikeFeed", () => {
-  test("RSS and Atom documents are feeds; HTML is not", () => {
+  test("RSS documents are feeds; Atom (unsupported by the runner) and HTML are not", () => {
     expect(looksLikeFeed('<?xml version="1.0"?><rss version="2.0"><channel>')).toBe(true);
-    expect(looksLikeFeed('<feed xmlns="http://www.w3.org/2005/Atom">')).toBe(true);
+    expect(looksLikeFeed('<feed xmlns="http://www.w3.org/2005/Atom">')).toBe(false);
     expect(looksLikeFeed("<!doctype html><html><head>")).toBe(false);
   });
 });
@@ -67,14 +67,13 @@ describe("feedTitle", () => {
 });
 
 describe("findAlternateFeeds", () => {
-  test("finds RSS/Atom alternate links and resolves them against the page", () => {
+  test("finds RSS alternate links (not Atom) and resolves them against the page", () => {
     const html =
       '<link rel="alternate" type="application/rss+xml" href="/feed.xml">' +
       '<link type="application/atom+xml" rel="alternate" href="https://other.example/atom">' +
       '<link rel="stylesheet" href="/style.css">';
     expect(findAlternateFeeds(html, "https://example.com/blog/")).toEqual([
       "https://example.com/feed.xml",
-      "https://other.example/atom",
     ]);
   });
 });
