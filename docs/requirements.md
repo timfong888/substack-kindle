@@ -1,6 +1,6 @@
 # Requirements — Newsletter-to-Kindle Service
 
-> **Status:** Living document. This is the source of truth for product requirements.
+> **Status:** Living document. In-repo mirror of the product requirements; the PRD linked in [`CLAUDE.md`](../CLAUDE.md) is authoritative, and discrepancies go to the owner.
 > Design explorations that may change these requirements live in [`docs/design/`](design/).
 >
 > **Revision 2026-10-20**
