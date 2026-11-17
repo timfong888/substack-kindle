@@ -32,6 +32,12 @@ describe("candidateFeedUrls", () => {
     expect(candidateFeedUrls("ftp://example.com")).toEqual([]);
   });
 
+  test("http input is upgraded to https, which the digest runner requires", () => {
+    expect(candidateFeedUrls("http://garymarcus.substack.com/feed")).toEqual([
+      "https://garymarcus.substack.com/feed",
+    ]);
+  });
+
   test("private and local hosts are refused", () => {
     expect(candidateFeedUrls("http://localhost/feed")).toEqual([]);
     expect(candidateFeedUrls("http://127.0.0.1/feed")).toEqual([]);

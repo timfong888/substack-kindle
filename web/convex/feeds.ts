@@ -16,6 +16,8 @@ function publicHttpUrl(raw: string): URL | null {
     return null;
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  // The digest runner fetches https only; publishers all serve it, so upgrade.
+  if (url.protocol === "http:") url.protocol = "https:";
   if (!url.hostname.includes(".") || PRIVATE_HOST.test(url.hostname)) return null;
   return url;
 }
@@ -77,7 +79,8 @@ export function findAlternateFeeds(html: string, pageUrl: string): string[] {
     if (!href) continue;
     try {
       const resolved = new URL(href, pageUrl);
-      if (publicHttpUrl(resolved.toString()) !== null) found.push(resolved.toString());
+      const safe = publicHttpUrl(resolved.toString());
+      if (safe !== null) found.push(safe.toString()); // http alternates upgraded to https
     } catch {
       // ignore malformed hrefs
     }
@@ -85,7 +88,7 @@ export function findAlternateFeeds(html: string, pageUrl: string): string[] {
   return found;
 }
 
-/** Re-checks a URL found inside fetched content before it is fetched in turn. */
+/** Re-checks a URL (e.g. a redirect target) before it is fetched: public https only. */
 export function isPublicHttpUrl(raw: string): boolean {
-  return publicHttpUrl(raw) !== null;
+  return raw.startsWith("https://") && publicHttpUrl(raw) !== null;
 }
