@@ -1,6 +1,6 @@
 # substack-kindle
 
-Newsletter → EPUB → Kindle digest service. Newsletters arrive at a per-user address on a Google Workspace mailbox we own (`substack+<code>@fong888.com`, decided 2026-10-20 — see `docs/design/intake-mailbox.md`), are stored as Markdown, and go out once a day as a single EPUB via Resend to the user's Kindle. Pass-through to the customer's inbox is Gmail-native forwarding. Resend is send-only. We never read the customer's own mailbox. The RSS path (`cli.py`) remains for free publications. Implementation: SAT-1104 / SAT-1105.
+Newsletter → EPUB → Kindle digest service. MVP (decided 2026-11-17, RSS only): the user signs up, adds the publications they read, and approves their own sender `kindle+<token>@mail.fong888.com` on Amazon; a daily runner reads the public RSS feeds (free posts in full, paid posts as previews) and sends one EPUB via Resend to the user's Kindle. Resend is send-only. We never read the customer's own mailbox. Spec: `docs/specs/substack-kindle-mvp-spec.md`. The Workspace intake mailbox (`docs/design/intake-mailbox.md`, SAT-1104 / SAT-1105) is no longer the MVP path; keeping it for full paid posts is an open decision.
 
 **Requirements and design docs:** [`docs/`](docs/README.md) — read `docs/requirements.md` before feature work.
 
