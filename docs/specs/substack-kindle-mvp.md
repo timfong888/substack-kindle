@@ -4,8 +4,8 @@
 > **Source:** the [PRD](https://docs.google.com/document/d/1F4qPDcvFxCcXtYPgc2ClKo57AFJbjyIQfp5dCQ6EhGE/edit) and its
 > "Decisions (Tim, 2026-11-17)" paragraph, plus the build in #77. Engineering spec:
 > [`substack-kindle-mvp-spec.md`](substack-kindle-mvp-spec.md).
-> **Scope:** the RSS path (account → subscriptions → Kindle step → daily digest), built for Tim first. Paid posts arrive
-> as previews until Tim decides otherwise (Q1).
+> **Scope:** the RSS path (account → subscriptions → Kindle step → daily digest), built for Tim first. Tim chose RSS
+> only on 2026-11-17: free posts arrive in full and paid posts as previews. Full paid posts are open decision Q1.
 
 The persona is a heavy Substack reader who writes, starting with Tim. Each criterion is deterministic: fixed clock, faked
 network, and no live Amazon, Resend or Substack calls.
@@ -65,6 +65,9 @@ the Resend idempotency key is derived from the user id and the set of post guids
 **AC-14: Digest structure.** The EPUB's first page shows the digest date. The table of contents lists every post
 title, grouped by publication. Post H1 headings become H2.
 
+**AC-18: Cover, and no cover is not a failure.** Each digest EPUB declares a 1600×2560 JPEG cover image showing the
+digest date. If rendering the cover fails, the digest is still sent, without a cover.
+
 ## Cross-cutting: security and privacy
 
 **AC-15: Runner authentication.** `digest:targets`, `digest:recordDigest` and `digest:markNoDigest` refuse a call
@@ -80,8 +83,8 @@ local part (`ensure_distinct_local_parts`).
 
 | # | Question | Blocks | Owner | Proposed wording if accepted |
 |---|---|---|---|---|
-| Q1 | MVP paid content: accept RSS previews, or keep the intake mailbox (#75) for paid posts? | Coverage, AC-9 content | Tim | "Paid posts appear as the feed's preview with a link to the full post." |
-| Q2 | Cover per send: the device test in #78 is not done | Cover criterion | Tim | "Each EPUB declares a 1600×2560 JPEG cover showing the date and lead headline; it appears as the library thumbnail on Paperwhite, iOS Kindle and Kindle for Web." |
+| Q1 | Keep the intake mailbox (#75) for full paid posts? The MVP ships previews. | Post-MVP coverage | Tim | "A paid post the user's own inbox received appears in full in their digest." |
+| Q2 | Cover thumbnail: the device test in #78 is not done | Cover thumbnail criterion | Tim | "The cover appears as the library thumbnail on Paperwhite, iOS Kindle and Kindle for Web." |
 | Q3 | Price and trial (one monthly Stripe price) | Pay stage | Tim | "After a [7/14/30]-day trial, digests stop until the user subscribes at [$2.99/$3.99/$4.99] a month." |
 | Q4 | Aha target: first digest within 15 min, 60 min or the same day? | AC-9 time bound | Tim | AC-9 as written assumes 15 min (the runner interval). |
 | Q5 | Should an edited post (new content hash) be re-sent? | AC-12 | Tim | AC-12 as written says no, which matches #77. |
@@ -110,6 +113,7 @@ skill dispatches it on `/codex`). Those tests live in `tests/acceptance/` (pytes
 | AC-12 | post key in `deliveredKeys` is skipped even with changed body | I | `tests/acceptance/test_digest_mvp.py` | `lint + test` | Yes |
 | AC-13 | two targets, send raises for the first: second is sent, `recordDigest` never called for the first; the retry sends the same idempotency key (same user, same guids) | I | same | `lint + test` | Yes |
 | AC-14 | build EPUB from 3 fixture posts across 2 publications; parse with `ebooklib`: date on first page, nav groups, no `<h1>` in post bodies | U | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
+| AC-18 | build with a fake cover renderer: EPUB has a `cover-image` manifest item, 1600×2560 JPEG; with a renderer that raises, the send still happens and the EPUB has no cover | I | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
 | AC-15 | bad signature and `issuedAt` ± 6 min refused on all three functions | I | `web/convex/acceptance/digest.test.ts` | `web` | Yes |
 | AC-16 | run with fixtures holding known addresses and titles; captured stdout and stderr contain none of them | I | `tests/acceptance/test_digest_mvp.py` | `lint + test` | Yes |
 | AC-17 | target with equal local parts → user counted `failed`, no send | I | same | `lint + test` | Yes |

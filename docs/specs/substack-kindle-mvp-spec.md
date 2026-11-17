@@ -2,8 +2,9 @@
 
 > **Status:** Draft for review (2026-11-17), from #79. It describes the RSS path being built in #77 and is meant to vet
 > that build, not to replace it. Acceptance criteria: [`substack-kindle-mvp.md`](substack-kindle-mvp.md).
-> **Supersedes for MVP:** the intake-mailbox ingestion in `docs/design/intake-mailbox.md`, **if** Tim confirms Q1
-> (RSS previews for paid posts). Until then both documents stand, and `docs/requirements.md` is not changed.
+> **Supersedes for MVP:** the intake-mailbox ingestion in `docs/design/intake-mailbox.md`. Tim chose RSS only on
+> 2026-11-17: the MVP delivers free posts in full and previews of paid posts. Keeping the intake mailbox for full paid
+> posts is open decision Q1.
 
 ## 1. Architecture
 
@@ -12,7 +13,7 @@ Browser ── Clerk auth ──> Next.js on Vercel (web/app) ──> Convex (we
                                                              ▲  HMAC-signed public functions
 GitHub Actions "Digest runner" (every 15 min) ── Python digest_run ──┘
         │  reads public RSS feeds (SSRF-checked)        │ builds EPUB (job_epub)
-        └──────────────> Resend POST /emails ──> user's @kindle.com address, From kindle+<token>@KINDLE_SENDER_DOMAIN
+        └──────────────> Resend POST /emails ──> user's @kindle.com address, From kindle+<token>@mail.fong888.com
 ```
 
 | Component | Runs on | Owns |
@@ -21,7 +22,7 @@ GitHub Actions "Digest runner" (every 15 min) ── Python digest_run ──┘
 | Convex functions (`web/convex/*.ts`) | Convex Production | All state; user-facing mutations and actions; runner API |
 | Digest runner (`src/substack_kindle/digest_run.py`) | GitHub Actions, `.github/workflows/digest.yml` | Feed reads, EPUB build, send, recording deliveries |
 | Resend | SaaS | Delivery only (send-only) |
-| DNS for `KINDLE_SENDER_DOMAIN` | Cloudflare | SPF, DKIM, DMARC `p=reject` for the sending subdomain |
+| DNS for `KINDLE_SENDER_DOMAIN` (`mail.fong888.com`) | Cloudflare | SPF, DKIM, DMARC `p=reject` for the sending subdomain |
 
 ## 2. Data model (Convex, `web/convex/schema.ts`)
 
@@ -134,6 +135,7 @@ External dependencies and failure behaviour:
 | First digest | served on the next pass, outside the slot | `digestRequestedAt` |
 | Lookback | 7 days (`LOOKBACK_DAYS`) | runner |
 | Posts per digest | ≤ 25 (`MAX_POSTS`) | runner |
+| Cover | text-only 1600×2560 JPEG rendered with Pillow; if rendering fails, the digest sends without a cover | runner (per #77) |
 | Dedupe | post guid, 30-day delivery lookback | `targets` + runner |
 | Test sends | ≤ 1 per 60 s per user | `sendTest` |
 | Subscriptions | ≤ 300 per user | `subscriptions.add` / `insert` |
@@ -154,7 +156,7 @@ External dependencies and failure behaviour:
 
 | # | Risk | Category | Likelihood × impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Paid posts arrive as previews; manual entry finds about 45% of what Tim reads (83/183 in #76) | Product | High × High | Q1: decide previews vs intake mailbox before calling the MVP done |
+| R1 | Paid posts arrive as previews (accepted for MVP), and the public profile found only 45% of what Tim reads (83/183 in #76), so manual entry must cover the rest | Product | High × Medium | Name search and URL entry; Q1 keeps the intake mailbox as the route to full paid posts |
 | R2 | Amazon treats an unrecognised sender as unapproved and silently drops the digest | External | Medium × High | Test send plus "It arrived" confirmation; never mark confirmed automatically |
 | R3 | GitHub `schedule` runs late or skips under load, breaking the first-digest promise | Technical | Medium × Medium | `workflow_dispatch` on request is a later option; measure lag for 1 week |
 | R4 | A user-supplied feed URL is used for SSRF | Security | Low × High | `check_public_https_url` on every hop; DNS rebinding between check and connect is not covered (accepted for MVP) |
@@ -166,11 +168,11 @@ External dependencies and failure behaviour:
 
 | # | Question | Blocks | Owner | Decide by |
 |---|---|---|---|---|
-| Q1 | Paid content: previews or intake mailbox | MVP sign-off; R1 | Tim (PM) | before #77 is called done |
-| Q2 | Cover per send (#78 device test) | Cover criterion | Tim | after the device test |
+| Q1 | Keep the intake mailbox (#75) for full paid posts? (MVP ships previews) | Post-MVP coverage; R1 | Tim (PM) | after 2 weeks of Tim using previews |
+| Q2 | Does the cover show as the library thumbnail on each device? (#78 device test) | Cover thumbnail criterion | Tim | after the device test |
 | Q3 | Price and trial | Pay stage | Tim | before a second user |
-| Q4 | Aha latency target | AC-9, NFR | Tim | with Q1 |
-| Q5 | Re-send edited posts | AC-12 | Tim | with Q1 |
+| Q4 | Aha latency target | AC-9, NFR | Tim | before a second user |
+| Q5 | Re-send edited posts | AC-12 | Tim | before a second user |
 | Q6 | Wire `size_budget` into `digest_run` (it isn't today) | R7 | Eng | before the first real digest |
 
 ## 8. Spec review (spec-review: technical accuracy and implementation readiness)
@@ -186,9 +188,9 @@ NFRs 7, testing 8.
 - Medium: the NFRs had no numbers. Added p95 first-digest latency, runner duration and reliability.
 
 **Implementation readiness: NEEDS CLARIFICATION.** Blockers:
-- Critical: Q1 (paid content) decides whether the MVP meets Tim's own job. It is logged with an owner, not defaulted.
+- High (was Critical): paid content. Tim decided on previews for MVP on 2026-11-17. Q1 (full paid posts via the intake mailbox) stays open, post-MVP.
 - High: the Kindle-step transitions were implied. Added the state table with invalid transitions.
 - High: `digest_run` does not enforce the EPUB size budget (Q6). Logged for Eng.
-- Medium: the cover and price stages have no criteria until Q2 and Q3 are answered. Logged, by design.
+- Medium: the price stage has no criteria until Q3 is answered, and the cover thumbnail criterion waits on the Q2 device test. Logged, by design.
 
-Verdicts: accuracy GOOD (after fixes) · readiness NEEDS CLARIFICATION (Q1).
+Verdicts: accuracy GOOD (after fixes) · readiness READY TO IMPLEMENT for the RSS path, with Q6 to fix before the first real digest.
