@@ -10,9 +10,59 @@ export default defineSchema({
     // Issued once on first creation and never changed afterwards.
     proxyAddress: v.string(),
     createdAt: v.number(),
+    // Kindle step. The sender token is issued once (rotation is a later ticket);
+    // the address the user approves on Amazon is kindle+<token>@KINDLE_SENDER_DOMAIN.
+    senderToken: v.optional(v.string()),
+    kindleEmail: v.optional(v.string()),
+    amazonStore: v.optional(v.string()),
+    testSentAt: v.optional(v.number()),
+    // Set when the user taps "It arrived"; cleared when the Kindle address changes.
+    kindleConfirmedAt: v.optional(v.number()),
+    // "Send my first digest": the digest runner picks this up and clears it.
+    digestRequestedAt: v.optional(v.number()),
+    lastDigestAt: v.optional(v.number()),
   })
     .index("byClerkUserId", ["clerkUserId"])
-    .index("byProxyAddress", ["proxyAddress"]),
+    .index("byProxyAddress", ["proxyAddress"])
+    .index("bySenderToken", ["senderToken"]),
+
+  // Publications a user reads, as RSS feeds (free posts in full, paid posts as previews).
+  subscriptions: defineTable({
+    userId: v.id("users"),
+    feedUrl: v.string(),
+    title: v.string(),
+    addedAt: v.number(),
+  })
+    .index("byUser", ["userId"])
+    .index("byUserAndFeed", ["userId", "feedUrl"]),
+
+  // Content model: a post (one URL/guid) has immutable revisions (a hash of the
+  // body as delivered); a delivery is one revision sent to one user in one digest.
+  // Bodies are not stored: the runner re-reads the public feed.
+  posts: defineTable({
+    key: v.string(), // the feed item's guid (Substack: the canonical post URL)
+    url: v.optional(v.string()),
+    title: v.string(),
+    publication: v.string(),
+    firstSeenAt: v.number(),
+  }).index("byKey", ["key"]),
+
+  contentRevisions: defineTable({
+    postId: v.id("posts"),
+    hash: v.string(), // sha256 of the cleaned Markdown
+    createdAt: v.number(),
+  }).index("byPostAndHash", ["postId", "hash"]),
+
+  deliveries: defineTable({
+    userId: v.id("users"),
+    revisionId: v.id("contentRevisions"),
+    postKey: v.string(),
+    digestKey: v.string(), // idempotency key of the digest email
+    status: v.union(v.literal("sent"), v.literal("failed")),
+    sentAt: v.number(),
+  })
+    .index("byUserAndPost", ["userId", "postKey"])
+    .index("byUserAndSentAt", ["userId", "sentAt"]),
 
   // Clerk user ids are never reused. A tombstone stops a late or out-of-order
   // user.created / user.updated webhook from recreating a deleted user.

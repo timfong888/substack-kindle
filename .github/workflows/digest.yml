@@ -1,0 +1,43 @@
+name: Digest runner
+
+# Stopgap scheduler until the Modal job exists: every 15 minutes, send digests to
+# users who are due one (daily) or who tapped "Send my first digest now".
+# Logs carry counts and Convex user ids only; this repository is public.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: digest-runner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CONVEX_URL: ${{ secrets.CONVEX_URL }}
+      PIPELINE_SHARED_SECRET: ${{ secrets.PIPELINE_SHARED_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+    steps:
+      - name: Skip until the owner adds the secrets
+        if: env.CONVEX_URL == '' || env.PIPELINE_SHARED_SECRET == '' || env.RESEND_API_KEY == ''
+        run: echo "Digest secrets not configured; nothing to do."
+
+      - uses: actions/checkout@v4
+        if: env.CONVEX_URL != '' && env.PIPELINE_SHARED_SECRET != '' && env.RESEND_API_KEY != ''
+
+      - uses: actions/setup-python@v5
+        if: env.CONVEX_URL != '' && env.PIPELINE_SHARED_SECRET != '' && env.RESEND_API_KEY != ''
+        with:
+          python-version: "3.11"
+
+      - name: Run digests
+        if: env.CONVEX_URL != '' && env.PIPELINE_SHARED_SECRET != '' && env.RESEND_API_KEY != ''
+        run: |
+          python -m pip install --quiet -e .
+          substack-kindle-digest

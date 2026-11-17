@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 substack-kindle = "substack_kindle.cli:main"
+substack-kindle-digest = "substack_kindle.digest_run:main"
 
 [build-system]
 requires = ["hatchling"]

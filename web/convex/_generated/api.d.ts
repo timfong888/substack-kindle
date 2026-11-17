@@ -13,10 +13,15 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as account from "../account.js";
+import type * as digest from "../digest.js";
+import type * as feeds from "../feeds.js";
 import type * as http from "../http.js";
 import type * as inbound from "../inbound.js";
+import type * as kindle from "../kindle.js";
 import type * as pipeline from "../pipeline.js";
 import type * as proxyAddress from "../proxyAddress.js";
+import type * as subscriptions from "../subscriptions.js";
 import type * as users from "../users.js";
 
 /**
@@ -28,10 +33,15 @@ import type * as users from "../users.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
+  digest: typeof digest;
+  feeds: typeof feeds;
   http: typeof http;
   inbound: typeof inbound;
+  kindle: typeof kindle;
   pipeline: typeof pipeline;
   proxyAddress: typeof proxyAddress;
+  subscriptions: typeof subscriptions;
   users: typeof users;
 }>;
 export declare const api: FilterApi<
