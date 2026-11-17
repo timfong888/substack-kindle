@@ -2,7 +2,7 @@
 
 Newsletter → EPUB → Kindle digest service. Newsletters arrive at a per-user address on a Google Workspace mailbox we own (`substack+<code>@fong888.com`, decided 2026-10-20 — see `docs/design/intake-mailbox.md`), are stored as Markdown, and go out once a day as a single EPUB via Resend to the user's Kindle. Pass-through to the customer's inbox is Gmail-native forwarding. Resend is send-only. We never read the customer's own mailbox. The RSS path (`cli.py`) remains for free publications. Implementation: SAT-1104 / SAT-1105.
 
-**Product requirements (PRD, source of truth):** [Substack to Kindle Service](https://docs.google.com/document/d/1F4qPDcvFxCcXtYPgc2ClKo57AFJbjyIQfp5dCQ6EhGE/edit?tab=t.0) — check feature and security work against it, especially its Security section. Where `docs/` disagrees with the PRD, raise it with the owner.
+**Product requirements (PRD, source of truth):** [Substack to Kindle Service](https://docs.google.com/document/d/1F4qPDcvFxCcXtYPgc2ClKo57AFJbjyIQfp5dCQ6EhGE/edit?tab=t.0) — check feature and security work against it, especially its Security section. (Private doc: read it through an owner-granted Google Drive connector; a plain web fetch hits a sign-in page.) Where `docs/` disagrees with the PRD, raise it with the owner.
 
 **Requirements and design docs:** [`docs/`](docs/README.md) — read `docs/requirements.md` before feature work.
 
