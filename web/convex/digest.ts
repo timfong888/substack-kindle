@@ -61,7 +61,8 @@ export const targets = query({
     const out = [];
     for (const user of await ctx.db.query("users").collect()) {
       if (!user.kindleConfirmedAt || !user.kindleEmail || !user.senderToken) continue;
-      const requested = user.digestRequestedAt !== undefined;
+      const requested =
+        user.digestRequestedAt !== undefined || user.pendingDigest !== undefined;
       const due = user.lastDigestAt === undefined || user.lastDigestAt < latestDailySlot(now);
       if (!requested && !due) continue;
       const feeds = await ctx.db
@@ -82,6 +83,7 @@ export const targets = query({
         feedUrls: feeds.map((f) => f.feedUrl),
         deliveredKeys: [...new Set(recent.filter((d) => d.status === "sent").map((d) => d.postKey))],
         lastDigestAt: user.lastDigestAt ?? null,
+        pendingDigest: user.pendingDigest ?? null,
       });
     }
     return out;
@@ -148,7 +150,31 @@ export const recordDigest = mutation({
         sentAt: now,
       });
     }
-    await ctx.db.patch(userId, { lastDigestAt: now, digestRequestedAt: undefined });
+    await ctx.db.patch(userId, {
+      lastDigestAt: now,
+      digestRequestedAt: undefined,
+      pendingDigest: undefined,
+    });
+  },
+});
+
+/**
+ * Remember the digest about to be sent (key + post keys) before sending it.
+ * Signature message: `begin-digest:<userId>:<digestKey>:<issuedAt>`.
+ */
+export const beginDigest = mutation({
+  args: {
+    userId: v.id("users"),
+    digestKey: v.string(),
+    postKeys: v.array(v.string()),
+    issuedAt: v.number(),
+    signature: v.string(),
+  },
+  handler: async (ctx, { userId, digestKey, postKeys, issuedAt, signature }) => {
+    await assertSigned(`begin-digest:${userId}:${digestKey}:${issuedAt}`, issuedAt, signature);
+    const user = await ctx.db.get(userId);
+    if (user === null) return;
+    await ctx.db.patch(userId, { pendingDigest: { digestKey, postKeys } });
   },
 });
 
@@ -162,6 +188,10 @@ export const markNoDigest = mutation({
     await assertSigned(`no-digest:${userId}:${issuedAt}`, issuedAt, signature);
     const user = await ctx.db.get(userId);
     if (user === null) return;
-    await ctx.db.patch(userId, { lastDigestAt: Date.now(), digestRequestedAt: undefined });
+    await ctx.db.patch(userId, {
+      lastDigestAt: Date.now(),
+      digestRequestedAt: undefined,
+      pendingDigest: undefined,
+    });
   },
 });

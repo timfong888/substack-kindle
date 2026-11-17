@@ -147,9 +147,16 @@ export const testSendTarget = internalQuery({
   },
 });
 
+/**
+ * Stamp the test as sent, but only if the Kindle address is still the one that
+ * received it: if it changed while the email was in flight, the new address
+ * has not been tested and must not become confirmable.
+ */
 export const markTestSent = internalMutation({
-  args: { userId: v.id("users"), at: v.number() },
-  handler: async (ctx, { userId, at }) => {
+  args: { userId: v.id("users"), at: v.number(), to: v.string() },
+  handler: async (ctx, { userId, at, to }) => {
+    const user = await ctx.db.get(userId);
+    if (user === null || user.kindleEmail !== to) return;
     await ctx.db.patch(userId, { testSentAt: at });
   },
 });
@@ -208,6 +215,10 @@ export const sendTest = action({
       console.error(`kindle test send failed: HTTP ${res.status}`);
       throw new Error("The test could not be sent. Try again in a minute.");
     }
-    await ctx.runMutation(internal.account.markTestSent, { userId: target.userId, at: now });
+    await ctx.runMutation(internal.account.markTestSent, {
+      userId: target.userId,
+      at: now,
+      to: target.to,
+    });
   },
 });

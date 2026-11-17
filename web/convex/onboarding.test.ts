@@ -281,3 +281,16 @@ describe("account deletion", () => {
     expect(await t.run(async (ctx) => (await ctx.db.query("subscriptions").collect()).length)).toBe(0);
   });
 });
+
+describe("test send race", () => {
+  test("a test sent to an old address does not mark a newly saved address as tested", async () => {
+    const { t, as } = await setup();
+    await as.mutation(api.account.ensureSender, {});
+    await as.mutation(api.account.setKindleEmail, { kindleEmail: "old@kindle.com" });
+    const userId = await t.run(async (ctx) => (await ctx.db.query("users").first())!._id);
+    await as.mutation(api.account.setKindleEmail, { kindleEmail: "new@kindle.com" });
+    await t.mutation(internal.account.markTestSent, { userId, at: 1, to: "old@kindle.com" });
+    expect((await as.query(api.account.state, {}))?.testSentAt).toBeNull();
+    await expect(as.mutation(api.account.confirmKindle, {})).rejects.toThrow(/test/);
+  });
+});

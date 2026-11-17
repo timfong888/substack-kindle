@@ -21,6 +21,10 @@ export default defineSchema({
     // "Send my first digest": the digest runner picks this up and clears it.
     digestRequestedAt: v.optional(v.number()),
     lastDigestAt: v.optional(v.number()),
+    // Written just before a digest is sent and cleared once it is recorded, so a
+    // retry after "sent but not recorded" finishes that exact digest instead of
+    // building a new one that would repeat its posts.
+    pendingDigest: v.optional(v.object({ digestKey: v.string(), postKeys: v.array(v.string()) })),
   })
     .index("byClerkUserId", ["clerkUserId"])
     .index("byProxyAddress", ["proxyAddress"])

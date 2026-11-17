@@ -246,6 +246,15 @@ def _digest_one(
         fresh.append(p)
     fresh = sorted(fresh, key=lambda p: p.published)[-MAX_POSTS:]
 
+    pending = target.get("pendingDigest")
+    if pending:
+        # An earlier run may have sent this digest without recording it. Rebuild
+        # exactly that post set under its key (Resend answers "already sent" if
+        # it went out); new posts wait for the next digest.
+        wanted = set(pending["postKeys"])
+        by_key = {p.guid: p for p in posts if p.guid in wanted}
+        fresh = sorted(by_key.values(), key=lambda p: p.published)
+
     if not fresh:
         issued = _ms(clock())  # signatures carry the time of the call itself
         convex.mutation(
@@ -258,8 +267,22 @@ def _digest_one(
         )
         return "empty"
 
-    keys = "\n".join(p.guid for p in fresh)
-    digest_key = f"digest-{user_id}-{hashlib.sha256(keys.encode()).hexdigest()[:16]}"
+    if pending:
+        digest_key = pending["digestKey"]
+    else:
+        keys = "\n".join(p.guid for p in fresh)
+        digest_key = f"digest-{user_id}-{hashlib.sha256(keys.encode()).hexdigest()[:16]}"
+        issued = _ms(clock())
+        convex.mutation(
+            "digest:beginDigest",
+            {
+                "userId": user_id,
+                "digestKey": digest_key,
+                "postKeys": [p.guid for p in fresh],
+                "issuedAt": float(issued),
+                "signature": sign(secret, f"begin-digest:{user_id}:{digest_key}:{issued}"),
+            },
+        )
     title = f"Substack Digest · {now:%a %d %b %Y}"
     publications = len({p.sender for p in fresh})
     epub_bytes = build_job_epub(

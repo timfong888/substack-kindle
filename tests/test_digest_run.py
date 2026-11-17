@@ -145,8 +145,11 @@ def test_sends_only_new_posts_inside_the_window_from_the_users_sender():
     assert any(n.endswith("cover.jpg") for n in names)  # per-send cover (#78)
     assert call["idempotency_key"].startswith("digest-user1-")
 
-    path, args = convex.mutations[0]
-    assert path == "digest:recordDigest"
+    assert [m[0] for m in convex.mutations] == ["digest:beginDigest", "digest:recordDigest"]
+    begin = convex.mutations[0][1]
+    assert begin["postKeys"] == ["https://a.example.com/p/fresh"]
+    path, args = convex.mutations[1]
+    assert begin["digestKey"] == args["digestKey"]
     assert [p["key"] for p in args["posts"]] == ["https://a.example.com/p/fresh"]
     post = args["posts"][0]
     assert post["publication"] == "Example A"
@@ -175,7 +178,9 @@ def test_one_users_failure_does_not_stop_the_others_and_is_not_recorded():
     send = FakeSender(fail=True)
     summary = _run(convex, send)
     assert summary.failed == 2 and summary.sent == 0
-    assert convex.mutations == []  # a failed send must stay undelivered for the next run
+    # A failed send is never recorded as delivered; only the pending marker is
+    # written, so the next run retries this exact digest.
+    assert {m[0] for m in convex.mutations} == {"digest:beginDigest"}
 
 
 def test_digest_key_changes_when_the_post_set_changes():
@@ -316,7 +321,7 @@ def test_feed_failures_never_log_the_url_or_error_text(capsys):
 
 def test_signatures_use_the_time_of_each_call_not_the_batch_start():
     convex = FakeConvex([_target()])
-    ticks = iter([NOW, NOW.replace(minute=30)])  # targets query, then the record call
+    ticks = iter([NOW, NOW, NOW.replace(minute=30)])  # targets, begin, then the record call
 
     run_digests(
         convex=convex,
@@ -326,7 +331,7 @@ def test_signatures_use_the_time_of_each_call_not_the_batch_start():
         now=NOW,
         clock=lambda: next(ticks),
     )
-    _, args = convex.mutations[0]
+    _, args = convex.mutations[-1]
     later = int(NOW.replace(minute=30).timestamp() * 1000)
     assert int(args["issuedAt"]) == later
     assert args["signature"] == sign(SECRET, f"record-digest:user1:{args['digestKey']}:{later}")
@@ -340,7 +345,7 @@ def test_an_email_already_sent_on_an_earlier_run_is_recorded_not_failed():
 
     summary = _run(convex, send)
     assert summary.sent == 1 and summary.failed == 0
-    assert convex.mutations[0][0] == "digest:recordDigest"
+    assert convex.mutations[-1][0] == "digest:recordDigest"
 
 
 def test_only_a_completed_idempotent_send_counts_as_already_sent():
@@ -354,3 +359,14 @@ def test_only_a_completed_idempotent_send_counts_as_already_sent():
         ResendError("Resend returned HTTP 409: concurrent_idempotent_requests: retry later")
     )
     assert not is_already_sent(ResendError("Resend returned HTTP 500: internal_server_error"))
+
+
+def test_a_pending_digest_is_finished_before_new_posts_are_considered():
+    # Earlier run: sent "old" but failed to record. Since then "fresh" appeared.
+    pending = {"digestKey": "digest-user1-pendingkey", "postKeys": ["https://a.example.com/p/old"]}
+    convex = FakeConvex([_target(deliveredKeys=[], pendingDigest=pending)])
+    send = FakeSender()
+    _run(convex, send)
+    assert send.calls[0]["idempotency_key"] == "digest-user1-pendingkey"
+    assert [m[0] for m in convex.mutations] == ["digest:recordDigest"]  # no new begin
+    assert [p["key"] for p in convex.mutations[0][1]["posts"]] == ["https://a.example.com/p/old"]

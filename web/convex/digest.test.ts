@@ -96,6 +96,7 @@ describe("targets", () => {
         feedUrls: ["https://a.substack.com/feed"],
         deliveredKeys: [],
         lastDigestAt: null,
+        pendingDigest: null,
       },
     ]);
   });
@@ -173,5 +174,30 @@ describe("markNoDigest", () => {
     const user = await t.run((ctx) => ctx.db.get(userId));
     expect(user?.digestRequestedAt).toBeUndefined();
     expect(user?.lastDigestAt).toBeGreaterThan(0);
+  });
+});
+
+describe("beginDigest", () => {
+  test("stores the pending digest, keeps the user due, and recordDigest clears it", async () => {
+    const { t, userId } = await setup({ lastDigestAt: Date.now() }); // not due by schedule
+    const issuedAt = Date.now();
+    await t.mutation(api.digest.beginDigest, {
+      userId,
+      digestKey: "dk",
+      postKeys: ["https://a.substack.com/p/one"],
+      issuedAt,
+      signature: await hmacHex(SECRET, `begin-digest:${userId}:dk:${issuedAt}`),
+    });
+    const [row] = await t.query(api.digest.targets, await signedTargets());
+    expect(row.pendingDigest).toEqual({ digestKey: "dk", postKeys: ["https://a.substack.com/p/one"] });
+    const at = Date.now();
+    await t.mutation(api.digest.recordDigest, {
+      userId,
+      digestKey: "dk",
+      posts: [{ key: "https://a.substack.com/p/one", title: "One", publication: "A", hash: "h" }],
+      issuedAt: at,
+      signature: await hmacHex(SECRET, `record-digest:${userId}:dk:${at}`),
+    });
+    expect((await t.run((ctx) => ctx.db.get(userId)))?.pendingDigest).toBeUndefined();
   });
 });
