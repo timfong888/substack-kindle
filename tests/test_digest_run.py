@@ -17,6 +17,7 @@ from substack_kindle.digest_run import (
     ConvexHttp,
     UnsafeUrlError,
     check_public_https_url,
+    is_already_sent,
     run_digests,
     sign,
 )
@@ -340,3 +341,16 @@ def test_an_email_already_sent_on_an_earlier_run_is_recorded_not_failed():
     summary = _run(convex, send)
     assert summary.sent == 1 and summary.failed == 0
     assert convex.mutations[0][0] == "digest:recordDigest"
+
+
+def test_only_a_completed_idempotent_send_counts_as_already_sent():
+    from substack_kindle.resend import ResendError
+
+    assert is_already_sent(
+        ResendError("Resend returned HTTP 409: invalid_idempotent_request: key reused")
+    )
+    # Still in flight: may yet fail, so it must stay a retryable failure.
+    assert not is_already_sent(
+        ResendError("Resend returned HTTP 409: concurrent_idempotent_requests: retry later")
+    )
+    assert not is_already_sent(ResendError("Resend returned HTTP 500: internal_server_error"))

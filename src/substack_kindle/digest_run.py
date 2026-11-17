@@ -55,6 +55,17 @@ class AlreadySent(Exception):
     """
 
 
+def is_already_sent(exc: Exception) -> bool:
+    """True only for Resend's ``invalid_idempotent_request`` (409): the key was
+    already used, with a different payload, by a request Resend accepted. Our
+    retry rebuilds the EPUB, whose timestamps differ, so this means "sent".
+
+    ``concurrent_idempotent_requests`` is also a 409 but means the first request
+    is still in flight and may yet fail, so it stays a retryable failure.
+    """
+    return "invalid_idempotent_request" in str(exc)
+
+
 class FeedsUnavailable(Exception):
     """None of a user's feeds could be read this run; retry next run."""
 
@@ -349,9 +360,7 @@ def main(env: Mapping[str, str] | None = None) -> int:
                 api_key=api_key, http_post=http_transport.post, **kwargs
             ).message_id
         except resend.ResendError as exc:
-            # Same idempotency key, different bytes (EPUB timestamps): Resend
-            # already accepted this post set on an earlier run.
-            if "HTTP 409" in str(exc):
+            if is_already_sent(exc):
                 raise AlreadySent() from None
             raise
 
