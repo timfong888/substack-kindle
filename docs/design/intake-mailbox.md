@@ -1,6 +1,8 @@
 # Design — Workspace intake mailbox, Gmail-native pass-through, swappable email store
 
-> **Status:** Decided (2026-10-20) for the MVP. Supersedes the Resend proxy inbox in
+> **Status:** No longer the MVP path (2026-11-17): MVP ingestion is RSS only, see
+> [`../specs/substack-kindle-mvp-spec.md`](../specs/substack-kindle-mvp-spec.md). Kept as the option for full paid posts
+> (open decision for Tim). Originally decided (2026-10-20) for the MVP. Supersedes the Resend proxy inbox in
 > [`ingestion-rss-and-proxy-inbox.md`](ingestion-rss-and-proxy-inbox.md) as the ingestion path.
 > Amends [`../requirements.md`](../requirements.md): Requirement 1 (ingestion), Requirement 13 (pass-through),
 > the "Gmail path removed" note, and the Resend section (Resend is now send-only).

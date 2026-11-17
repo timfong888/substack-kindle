@@ -3,6 +3,15 @@
 > **Status:** Living document. This is the source of truth for product requirements.
 > Design explorations that may change these requirements live in [`docs/design/`](design/).
 >
+> **Revision 2026-11-17**
+> - MVP ingestion is **RSS only** (Tim, 2026-11-17: "The forwarding route is not what we want"). The user creates an
+>   account and adds the publications they read by URL or name search. The MVP delivers free posts in full and
+>   **previews of paid posts**. The intake mailbox (2026-10-20, below) is no longer the MVP path. Keeping it for full
+>   paid posts is an open decision for Tim.
+> - Kindle: no Amazon credentials. Each user approves their own sender `kindle+<token>@mail.fong888.com`.
+> - Daily digest at 13:00 UTC, or immediately on the user's first request. Runner: GitHub Actions.
+> - MVP acceptance criteria and engineering spec: [`specs/substack-kindle-mvp.md`](specs/substack-kindle-mvp.md).
+>
 > **Revision 2026-10-20**
 > - Ingestion: the Resend proxy inbox is replaced by a **Google Workspace intake mailbox** we own
 >   (`substack+<code>@fong888.com`), read by a service account; pass-through is **Gmail-native forwarding** so the
