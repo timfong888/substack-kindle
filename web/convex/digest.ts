@@ -7,8 +7,20 @@ import { mutation, query } from "./_generated/server";
 import { senderAddress } from "./kindle";
 import { constantTimeEqual, MAX_SKEW_MS } from "./pipeline";
 
-/** A user gets at most one scheduled digest per this interval (requests skip it). */
-export const DIGEST_INTERVAL_MS = 20 * 3_600_000;
+/**
+ * Scheduled digests go out once per day, at the first runner pass after this
+ * UTC hour (13:00 UTC = 05:00 Pacific / 08:00 Eastern). A fixed slot, rather
+ * than "24h since the last one", stops the time drifting later each day.
+ * A "send my first digest" request is served immediately, outside the slot.
+ */
+export const DAILY_SLOT_UTC_HOUR = 13;
+
+/** Start of the most recent daily slot at or before `now` (epoch ms). */
+export function latestDailySlot(now: number): number {
+  const d = new Date(now);
+  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), DAILY_SLOT_UTC_HOUR);
+  return now >= today ? today : today - 86_400_000;
+}
 /** Post keys already delivered within this lookback are sent to the runner for dedup. */
 export const DEDUP_LOOKBACK_MS = 30 * 86_400_000;
 
@@ -36,7 +48,7 @@ async function assertSigned(message: string, issuedAt: number, signature: string
 
 /**
  * Users due a digest: Kindle confirmed, at least one feed, and either a pending
- * "send my first digest" request or no digest in DIGEST_INTERVAL_MS.
+ * "send my first digest" request or no digest since the latest daily slot.
  * Signature message: `digest-targets:<issuedAt>`.
  */
 export const targets = query({
@@ -50,7 +62,7 @@ export const targets = query({
     for (const user of await ctx.db.query("users").collect()) {
       if (!user.kindleConfirmedAt || !user.kindleEmail || !user.senderToken) continue;
       const requested = user.digestRequestedAt !== undefined;
-      const due = user.lastDigestAt === undefined || now - user.lastDigestAt >= DIGEST_INTERVAL_MS;
+      const due = user.lastDigestAt === undefined || user.lastDigestAt < latestDailySlot(now);
       if (!requested && !due) continue;
       const feeds = await ctx.db
         .query("subscriptions")

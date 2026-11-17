@@ -59,8 +59,19 @@ def sign(secret: str, message: str) -> str:
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
-def check_public_https_url(url: str) -> None:
-    """Refuse anything but https to a public host (feeds are user-supplied: SSRF)."""
+def _system_resolver(host: str) -> list[str]:
+    import socket
+
+    return [info[4][0] for info in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)]
+
+
+def check_public_https_url(url: str, *, resolve: Callable[[str], list[str]] | None = None) -> None:
+    """Refuse anything but https to a public host (feeds are user-supplied: SSRF).
+
+    Host names are resolved and every address must be public, so a public
+    name pointing at a private or metadata address is refused. (A DNS answer
+    that changes between this check and the connection is not covered.)
+    """
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
     if parts.scheme != "https" or not host:
@@ -68,13 +79,23 @@ def check_public_https_url(url: str) -> None:
     if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
         raise UnsafeUrlError(f"local host: {url!r}")
     try:
-        ip = ipaddress.ip_address(host)
+        literal: str | None = str(ipaddress.ip_address(host))
     except ValueError:
+        literal = None
+    if literal is not None:
+        addresses = [literal]
+    else:
         if "." not in host:
-            raise UnsafeUrlError(f"not a public host: {url!r}") from None
-        return
-    if not ip.is_global:
-        raise UnsafeUrlError(f"non-public address: {url!r}")
+            raise UnsafeUrlError(f"not a public host: {url!r}")
+        try:
+            addresses = (resolve or _system_resolver)(host)
+        except OSError as exc:
+            raise UnsafeUrlError(f"could not resolve {host!r}: {exc}") from None
+        if not addresses:
+            raise UnsafeUrlError(f"no addresses for {host!r}")
+    for address in addresses:
+        if not ipaddress.ip_address(address.split("%", 1)[0]).is_global:
+            raise UnsafeUrlError(f"non-public address for {url!r}")
 
 
 def safe_http_get(url: str, *, get: Callable[..., Any] | None = None) -> bytes:

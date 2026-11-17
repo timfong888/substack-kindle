@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { DIGEST_INTERVAL_MS, hmacHex } from "./digest";
+import { DAILY_SLOT_UTC_HOUR, hmacHex, latestDailySlot } from "./digest";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -52,6 +52,24 @@ describe("hmacHex", () => {
   });
 });
 
+describe("latestDailySlot", () => {
+  test("is today's slot after the hour and yesterday's before it", () => {
+    const day = Date.UTC(2026, 10, 17);
+    const slot = day + DAILY_SLOT_UTC_HOUR * 3_600_000;
+    expect(latestDailySlot(slot + 60_000)).toBe(slot);
+    expect(latestDailySlot(slot)).toBe(slot);
+    expect(latestDailySlot(slot - 60_000)).toBe(slot - 86_400_000);
+  });
+
+  test("a user served before today's slot is due again after it, once", () => {
+    const slot = Date.UTC(2026, 10, 17, DAILY_SLOT_UTC_HOUR);
+    const servedYesterday = slot - 3_600_000; // after yesterday's slot, before today's
+    expect(servedYesterday < latestDailySlot(slot + 15 * 60_000)).toBe(true);
+    const servedToday = slot + 15 * 60_000;
+    expect(servedToday < latestDailySlot(slot + 23 * 3_600_000)).toBe(false);
+  });
+});
+
 describe("targets", () => {
   test("rejects a bad or stale signature", async () => {
     const { t } = await setup();
@@ -86,7 +104,7 @@ describe("targets", () => {
     const unconfirmed = await setup({ kindleConfirmedAt: undefined });
     expect(await unconfirmed.t.query(api.digest.targets, await signedTargets())).toEqual([]);
 
-    const recent = await setup({ lastDigestAt: Date.now() - DIGEST_INTERVAL_MS / 2 });
+    const recent = await setup({ lastDigestAt: latestDailySlot(Date.now()) + 1 });
     expect(await recent.t.query(api.digest.targets, await signedTargets())).toEqual([]);
 
     const asked = await setup({ lastDigestAt: Date.now() - 1000, digestRequestedAt: Date.now() });

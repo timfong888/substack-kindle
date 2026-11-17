@@ -213,11 +213,29 @@ def test_unreadable_feed_is_skipped_not_fatal():
 )
 def test_unsafe_urls_are_refused(url):
     with pytest.raises(UnsafeUrlError):
-        check_public_https_url(url)
+        check_public_https_url(url, resolve=lambda host: ["93.184.216.34"])
 
 
 def test_public_https_url_passes():
-    check_public_https_url("https://blog.bytebytego.com/feed")
+    check_public_https_url(
+        "https://blog.bytebytego.com/feed", resolve=lambda host: ["93.184.216.34"]
+    )
+
+
+@pytest.mark.parametrize("address", ["169.254.169.254", "10.0.0.7", "127.0.0.1", "::1", "fd00::1"])
+def test_a_public_name_that_resolves_to_a_private_address_is_refused(address):
+    with pytest.raises(UnsafeUrlError, match="non-public"):
+        check_public_https_url(
+            "https://metadata.example.com/feed", resolve=lambda host: ["93.184.216.34", address]
+        )
+
+
+def test_an_unresolvable_host_is_refused():
+    def fail(host):
+        raise OSError("Name or service not known")
+
+    with pytest.raises(UnsafeUrlError, match="resolve"):
+        check_public_https_url("https://nope.example.com/feed", resolve=fail)
 
 
 # ---------------------------------------------------------------- Convex HTTP
