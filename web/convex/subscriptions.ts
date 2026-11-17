@@ -77,6 +77,8 @@ export const userIdForClerk = internalQuery({
 export const insert = internalMutation({
   args: { userId: v.id("users"), feedUrl: v.string(), title: v.string() },
   handler: async (ctx, { userId, feedUrl, title }) => {
+    // The user may have been deleted while the feed was being resolved.
+    if ((await ctx.db.get(userId)) === null) return "full" as const;
     const existing = await ctx.db
       .query("subscriptions")
       .withIndex("byUserAndFeed", (q) => q.eq("userId", userId).eq("feedUrl", feedUrl))

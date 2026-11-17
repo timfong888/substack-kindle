@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { TEST_SEND_INTERVAL_MS } from "./account";
 import schema from "./schema";
 import { parseSearchResults } from "./subscriptions";
@@ -253,5 +253,31 @@ describe("subscription limit", () => {
     vi.stubGlobal("fetch", fetchMock);
     expect(await as.action(api.subscriptions.add, { input: "bytebytego" })).toMatchObject({ status: "full" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("account deletion", () => {
+  test("purges subscriptions and deliveries, and late inserts are refused", async () => {
+    vi.useFakeTimers();
+    const { t } = await setup();
+    const userId = await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").first();
+      const post = await ctx.db.insert("posts", { key: "k", title: "T", publication: "P", firstSeenAt: 0 });
+      const revisionId = await ctx.db.insert("contentRevisions", { postId: post, hash: "h", createdAt: 0 });
+      await ctx.db.insert("subscriptions", { userId: user!._id, feedUrl: "https://a.example/feed?token=x", title: "A", addedAt: 0 });
+      await ctx.db.insert("deliveries", { userId: user!._id, revisionId, postKey: "k", digestKey: "d", status: "sent", sentAt: 0 });
+      return user!._id;
+    });
+    await t.mutation(internal.users.deleteFromClerk, { clerkUserId: CLERK_ID });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const left = await t.run(async (ctx) => ({
+      subs: (await ctx.db.query("subscriptions").collect()).length,
+      deliveries: (await ctx.db.query("deliveries").collect()).length,
+    }));
+    expect(left).toEqual({ subs: 0, deliveries: 0 });
+    expect(
+      await t.mutation(internal.subscriptions.insert, { userId, feedUrl: "https://b.example/feed", title: "B" }),
+    ).toBe("full");
+    expect(await t.run(async (ctx) => (await ctx.db.query("subscriptions").collect()).length)).toBe(0);
   });
 });
