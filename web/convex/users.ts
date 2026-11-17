@@ -186,6 +186,7 @@ export const deleteFromClerk = internalMutation({
     if (user === null) return;
     await ctx.db.delete(user._id);
     await ctx.scheduler.runAfter(0, internal.users.purgeEmails, { userId: user._id });
+    await ctx.scheduler.runAfter(0, internal.users.purgeReadingData, { userId: user._id });
   },
 });
 
@@ -199,6 +200,28 @@ export const purgeEmails = internalMutation({
     for (const row of batch) await ctx.db.delete(row._id);
     if (batch.length === PURGE_BATCH) {
       await ctx.scheduler.runAfter(0, internal.users.purgeEmails, { userId });
+    }
+  },
+});
+
+/**
+ * Delete a deleted user's subscriptions (feed URLs may carry private tokens)
+ * and delivery history, in batches.
+ */
+export const purgeReadingData = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }: { userId: Id<"users"> }) => {
+    const subs = await ctx.db
+      .query("subscriptions")
+      .withIndex("byUser", (q) => q.eq("userId", userId))
+      .take(PURGE_BATCH);
+    const deliveries = await ctx.db
+      .query("deliveries")
+      .withIndex("byUserAndSentAt", (q) => q.eq("userId", userId))
+      .take(PURGE_BATCH);
+    for (const row of [...subs, ...deliveries]) await ctx.db.delete(row._id);
+    if (subs.length === PURGE_BATCH || deliveries.length === PURGE_BATCH) {
+      await ctx.scheduler.runAfter(0, internal.users.purgeReadingData, { userId });
     }
   },
 });

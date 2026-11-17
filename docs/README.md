@@ -4,10 +4,11 @@ Start here for product context before changing code.
 
 | Doc | What it is |
 |---|---|
-| [requirements.md](requirements.md) | Product requirements, provider decisions, merge gate, bootstrap. Source of truth. |
+| [requirements.md](requirements.md) | In-repo mirror of product requirements, provider decisions, merge gate, and bootstrap. The PRD linked in `CLAUDE.md` is the authoritative source of truth; raise discrepancies with the owner. |
 | [design/intake-mailbox.md](design/intake-mailbox.md) | **Decided (2026-10-20):** Workspace intake mailbox with plus-addresses, Gmail-native pass-through, swappable email store. Supersedes the Resend proxy inbox. |
 | [design/ingestion-rss-and-proxy-inbox.md](design/ingestion-rss-and-proxy-inbox.md) | Superseded exploration: RSS-first ingestion, paid newsletters via private feeds / Resend proxy inbox. |
 | [design/reading-experience.md](design/reading-experience.md) | Exploration: EPUB across Kindle e-ink, Kindle iOS/Mac apps, Apple Books; features to leverage; positioning. |
+| [samples/cover-sample.jpg](samples/cover-sample.jpg) | Sample per-send digest cover (1600×2560, text only, placeholder headlines) for the cover research in issue #78. |
 
 Conventions:
 - Requirements change only via PR. Record the change in the revision note at the top of `requirements.md`.

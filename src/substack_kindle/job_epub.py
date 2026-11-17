@@ -153,6 +153,7 @@ def build_job_epub(
     identifier: str | None = None,
     author: str = _DEFAULT_AUTHOR,
     subtitle: str | None = None,
+    cover_image: bytes | None = None,
 ) -> bytes:
     """Build a single EPUB for a job from its (already deduped) sections.
 
@@ -178,6 +179,10 @@ def build_job_epub(
     book.set_title(book_title)
     book.add_author(author)
     book.set_language("en")
+    if cover_image:
+        # Library thumbnail (#78). No cover page in the spine: the title page
+        # stays the first thing a reader sees, as before.
+        book.set_cover("cover.jpg", cover_image, create_page=False)
     if subtitle:
         book.add_metadata("DC", "description", subtitle)
 
