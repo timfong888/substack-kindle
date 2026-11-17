@@ -171,6 +171,36 @@ describe("subscriptions", () => {
     expect((await as.query(api.subscriptions.list, {}))[0].feedUrl).toBe("https://example.org/rss.xml");
   });
 
+  test("a redirect to a private address is refused before it is requested", async () => {
+    const { as } = await setup();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "https://evil.substack.com/feed") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://169.254.169.254/latest/meta-data" },
+        });
+      }
+      return rssResponse("Should not be fetched", url);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(as.action(api.subscriptions.add, { input: "evil" })).rejects.toThrow(/feed/);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(["https://evil.substack.com/feed"]);
+  });
+
+  test("a redirect to a public feed is followed", async () => {
+    const { as } = await setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url === "https://moved.substack.com/feed"
+          ? new Response(null, { status: 301, headers: { location: "https://www.moved.example/feed" } })
+          : rssResponse("Moved", url),
+      ),
+    );
+    await as.action(api.subscriptions.add, { input: "moved" });
+    expect((await as.query(api.subscriptions.list, {}))[0].feedUrl).toBe("https://www.moved.example/feed");
+  });
+
   test("add reports when no feed can be found", async () => {
     const { as } = await setup();
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html></html>", { status: 200 })));

@@ -87,17 +87,34 @@ export const insert = internalMutation({
   },
 });
 
+const MAX_REDIRECTS = 3;
+
+/**
+ * GET a URL, following at most MAX_REDIRECTS redirects by hand so every hop is
+ * checked before it is requested (a public feed must not be able to redirect us
+ * to an internal address).
+ */
 async function fetchText(url: string): Promise<{ finalUrl: string; body: string } | null> {
+  let current = url;
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { Accept: "application/rss+xml, application/atom+xml, text/html;q=0.8" },
-    });
-    // A redirect could land on a host we would not have fetched directly.
-    if (!res.ok || !isPublicHttpUrl(res.url || url)) return null;
-    const body = (await res.text()).slice(0, MAX_BODY_CHARS);
-    return { finalUrl: res.url || url, body };
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (!isPublicHttpUrl(current)) return null;
+      const res = await fetch(current, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { Accept: "application/rss+xml, application/atom+xml, text/html;q=0.8" },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        if (!location) return null;
+        current = new URL(location, current).toString();
+        continue;
+      }
+      if (!res.ok) return null;
+      const body = (await res.text()).slice(0, MAX_BODY_CHARS);
+      return { finalUrl: current, body };
+    }
+    return null;
   } catch {
     return null;
   }
