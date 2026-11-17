@@ -161,6 +161,17 @@ export const markTestSent = internalMutation({
   },
 });
 
+/**
+ * Idempotency key for a test send: per user, per Kindle address, per minute.
+ * The address is part of it, so a corrected address gets a fresh key rather than
+ * a 409 for reusing the old address's key with a different `to`.
+ */
+export async function testSendKey(userId: string, to: string, now: number): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(to));
+  const hex = Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `kindle-test-${userId}-${hex}-${Math.floor(now / TEST_SEND_INTERVAL_MS)}`;
+}
+
 /** A one-page HTML document; Send to Kindle converts it into a book in the library. */
 export function testDocument(sender: string): string {
   return [
@@ -195,7 +206,7 @@ export const sendTest = action({
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "Idempotency-Key": `kindle-test-${target.userId}-${Math.floor(now / TEST_SEND_INTERVAL_MS)}`,
+        "Idempotency-Key": await testSendKey(target.userId, target.to, now),
       },
       body: JSON.stringify({
         from: target.from,

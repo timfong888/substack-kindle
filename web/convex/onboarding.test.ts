@@ -294,3 +294,31 @@ describe("test send race", () => {
     await expect(as.mutation(api.account.confirmKindle, {})).rejects.toThrow(/test/);
   });
 });
+
+describe("test send key", () => {
+  test("a corrected Kindle address gets a fresh key within the same minute", async () => {
+    const { testSendKey } = await import("./account");
+    const now = Date.UTC(2026, 10, 17, 6, 0, 10);
+    const a = await testSendKey("user1", "old@kindle.com", now);
+    const b = await testSendKey("user1", "new@kindle.com", now + 5_000);
+    expect(a).not.toBe(b);
+    expect(await testSendKey("user1", "old@kindle.com", now + 5_000)).toBe(a);
+  });
+
+  test("changing the address and resending within the minute uses a new key", async () => {
+    const { t, as } = await setup();
+    await as.mutation(api.account.ensureSender, {});
+    await as.mutation(api.account.setKindleEmail, { kindleEmail: "typo@kindle.com" });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "em" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await as.action(api.account.sendTest, {});
+    await as.mutation(api.account.setKindleEmail, { kindleEmail: "right@kindle.com" });
+    await as.action(api.account.sendTest, {});
+    const keys = fetchMock.mock.calls.map(
+      (c) => ((c as unknown as [string, RequestInit])[1].headers as Record<string, string>)["Idempotency-Key"],
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    void t;
+  });
+});
