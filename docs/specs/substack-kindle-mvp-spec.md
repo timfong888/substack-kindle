@@ -42,6 +42,7 @@ Times are epoch milliseconds, UTC. Convex ids are opaque strings.
 | `kindleConfirmedAt` | number | no | cleared when `kindleEmail` changes | `account.confirmKindle` |
 | `digestRequestedAt` | number | no | cleared by `recordDigest` / `markNoDigest` | `account.requestDigest` |
 | `lastDigestAt` | number | no | last digest or empty run | `recordDigest` / `markNoDigest` |
+| `pendingDigest` | `{digestKey: string, postKeys: string[]}` | no | the batch about to be sent; set before the send, cleared by `recordDigest` / `markNoDigest`; a user with one is always a target | `digest:beginDigest` |
 
 **subscriptions**: `userId` (id → users, many-to-one), `feedUrl` (https, public host), `title`, `addedAt`. At most
 300 per user (`MAX_SUBSCRIPTIONS`). Unique on `(userId, feedUrl)`, enforced in `insert` via index `byUserAndFeed`.
@@ -99,9 +100,10 @@ Runner API (public Convex functions, HMAC-SHA256 over `PIPELINE_SHARED_SECRET`, 
 
 | Function | Signature | Message signed |
 |---|---|---|
-| `digest:targets` | `(issuedAt, signature) → Target[]` where `Target = {userId, sender, kindleEmail, feeds[], deliveredKeys[], lastDigestAt}` | per `digest.ts` |
+| `digest:targets` | `(issuedAt, signature) → Target[]` where `Target = {userId, sender, kindleEmail, feeds[], deliveredKeys[], lastDigestAt, pendingDigest}` | per `digest.ts` |
 | `digest:recordDigest` | `(userId, digestKey, posts[], issuedAt, signature) → void`; idempotent on `digestKey` | `record-digest:<userId>:<digestKey>:<issuedAt>` |
-| `digest:markNoDigest` | `(userId, issuedAt, signature) → void` | `no-digest:<userId>:<issuedAt>` |
+| `digest:beginDigest` | `(userId, digestKey, postKeys[], issuedAt, signature) → void`; stores `pendingDigest` | `begin-digest:<userId>:<digestKey>:<issuedAt>` |
+| `digest:markNoDigest` | `(userId, issuedAt, signature) → void`; also clears `pendingDigest` | `no-digest:<userId>:<issuedAt>` |
 
 Runner (Python, all I/O injected):
 
@@ -113,14 +115,17 @@ main(env: Mapping[str, str] | None = None) -> int              # exit 0 unless r
 
 Per target, synchronously and in order: check distinct local parts → fetch each feed with `safe_http_get` (https,
 public addresses only, ≤3 redirects, each hop re-checked, 20 s timeout) → keep posts from the last 7 days not in
-`deliveredKeys`, newest first, at most 25 → if none, `markNoDigest` → else build EPUB → `send` via Resend with
-`idempotency_key = digest-<userId>-<sha256(guids)[:16]>` → `recordDigest`.
+`deliveredKeys`, newest first, at most 25 → if the target has a `pendingDigest`, replace that set with exactly its
+`postKeys` (new posts wait for the next digest) → if none, `markNoDigest` → else, for a new batch, compute
+`digestKey = digest-<userId>-<sha256(guids)[:16]>` and call `beginDigest` (a pending batch reuses its key) → build
+EPUB → `send` via Resend with `idempotency_key = digestKey` (Resend's 409 for an already-used key is treated as
+`AlreadySent`, i.e. success) → `recordDigest`.
 
-Transaction boundaries: each Convex mutation is one transaction. Send and record are not atomic. If the send
-succeeds and `recordDigest` fails, the next pass re-reads the feeds and rebuilds the post set. Resend's idempotency
-key drops the duplicate **only if** that set is unchanged and the retry falls inside Resend's 24-hour window. If a new
-post appears in between, the key changes and the already-sent posts are sent again in the new digest (R6). Fixing
-this needs a persisted pending batch (Q7); the MVP accepts the limitation.
+Transaction boundaries: each Convex mutation is one transaction. Send and record are not atomic, so the batch is
+persisted first (`beginDigest`). If the send succeeds and `recordDigest` fails, the next pass rebuilds exactly the
+pending post set under the same key, Resend answers that the key was used (`AlreadySent`), and the runner records
+the delivery. New posts wait for the following digest. Residual gap: a retry after Resend's 24-hour idempotency
+window sends again (R6).
 
 External dependencies and failure behaviour:
 
@@ -165,7 +170,7 @@ External dependencies and failure behaviour:
 | R3 | GitHub `schedule` runs late or skips under load, breaking the first-digest promise | Technical | Medium × Medium | `workflow_dispatch` on request is a later option; measure lag for 1 week |
 | R4 | A user-supplied feed URL is used for SSRF | Security | Low × High | `check_public_https_url` on every hop; DNS rebinding between check and connect is not covered (accepted for MVP) |
 | R5 | `digest:targets` full scan exceeds Convex read limits as users grow | Technical | Low (Tim-first) × Medium | Add an index on a `nextDueAt` field past ~1,000 users |
-| R6 | Send succeeds, `recordDigest` fails, and the retry re-sends those posts: after 24 h, or sooner if a new post changes the guid set and so the idempotency key | Technical | Low × Low | Accept for MVP; Kindle shows the posts twice. Q7: persist the pending batch before sending |
+| R6 | Send succeeds, `recordDigest` fails, and the retry comes more than 24 h later (outside Resend's idempotency window), so the pending batch is sent twice | Technical | Low × Low | `pendingDigest` + `beginDigest` cover retries within 24 h; the 15-min runner makes a later retry unlikely. Accept the rest |
 | R7 | Kindle drops EPUBs over its size limit | External | Low × Medium | 25-post cap only: `digest_run` in #77 does not call `size_budget.py`. Add the check (Q6) |
 
 ## 7. Open questions
@@ -178,7 +183,6 @@ External dependencies and failure behaviour:
 | Q4 | Aha latency target | AC-9, NFR | Tim | before a second user |
 | Q5 | Re-send edited posts | AC-12 | Tim | before a second user |
 | Q6 | Wire `size_budget` into `digest_run` (it isn't today) | R7 | Eng | before the first real digest |
-| Q7 | Persist a pending batch before sending, so a send-then-record failure can't re-send? | R6 | Eng + Tim | before a second user |
 
 ## 8. Spec review (spec-review: technical accuracy and implementation readiness)
 
@@ -188,7 +192,7 @@ Run once on the first draft; the fixes are already applied above.
 NFRs 7, testing 8.
 - High: "Interfaces" first gave the idempotency key as per user and slot; #77 derives it from the user id and a hash of
   the post guids. Fixed in §3 and AC-13.
-- High: there was no transaction boundary for send → record. Added, with the Resend 24-hour window, the changing-feed case (from PR review) and R6 / Q7.
+- High: there was no transaction boundary for send → record. Added, with the Resend 24-hour window, and the pending-batch mechanism #77 added (`pendingDigest`, `digest:beginDigest`; from PR review) and R6.
 - Medium: the indexes had no queries listed. Added the index → query table, and the `targets` full scan as R5.
 - Medium: the NFRs had no numbers. Added p95 first-digest latency, runner duration and reliability.
 

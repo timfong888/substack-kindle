@@ -60,10 +60,10 @@ digest in the first runner pass after that slot, and no second one that day.
 again, even if the feed lists it again or its content changes.
 
 **AC-13: Failure isolation and retry.** If sending to one user fails, the other users' digests still go out. The
-failed user gets no delivery records, so the next pass retries them. A retry of the same digest cannot send twice:
-the Resend idempotency key is derived from the user id and the set of post guids. This guarantee holds only while
-the post set is unchanged. If the send succeeded, recording failed and a new post has appeared since, the earlier posts
-are sent again: an accepted MVP limitation (spec R6, Q7).
+failed user gets no delivery records, so the next pass retries them. Before sending, the runner stores the batch
+(`pendingDigest`). If the send succeeded but recording failed, the next pass resends exactly that batch under the
+same idempotency key, treats Resend's "already used" answer as success and records it; posts that appeared in between
+wait for the following digest. A retry more than 24 hours later is not covered (spec R6).
 
 **AC-14: Digest structure.** The EPUB's first page shows the digest date. The table of contents lists every post
 title, grouped by publication. Each chapter has exactly one H1, the generated article title
@@ -115,7 +115,7 @@ skill dispatches it on `/codex`). Those tests live in `tests/acceptance/` (pytes
 | AC-10 | feeds with only delivered posts → no send, summary `empty=1` | I | same | `lint + test` | Yes |
 | AC-11 | `digest:targets` at 12:59 and 13:16 UTC with `lastDigestAt` the day before → target only at 13:16, and not again after `recordDigest` | I | `web/convex/acceptance/digest.test.ts` | `web` | Yes |
 | AC-12 | post key in `deliveredKeys` is skipped even with changed body | I | `tests/acceptance/test_digest_mvp.py` | `lint + test` | Yes |
-| AC-13 | two targets, send raises for the first: second is sent, `recordDigest` never called for the first; the retry sends the same idempotency key (same user, same guids). Limitation scenario: send succeeds, `recordDigest` raises, a new post appears, and the next pass sends a different key that includes the earlier posts. Assert this as documented behaviour until Q7 is decided | I | same | `lint + test` | Yes |
+| AC-13 | two targets, send raises for the first: second is sent, `recordDigest` never called for the first; pending-batch scenario: send succeeds, `recordDigest` raises, a new post appears; the next pass calls no `beginDigest`, sends the pending post set (without the new post) under the same key, and on an `AlreadySent` raise still calls `recordDigest` once | I | same | `lint + test` | Yes |
 | AC-14 | build EPUB from 3 fixture posts across 2 publications; parse with `ebooklib`: date on first page, nav groups, each chapter has exactly one `<h1>`, with class `article-title`; a fixture post's own `# Heading` appears as `<h2>` | U | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
 | AC-18 | build with a fake cover renderer: EPUB has a `cover-image` manifest item, 1600×2560 JPEG; with a renderer that raises, the send still happens and the EPUB has no cover | I | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
 | AC-15 | bad signature and `issuedAt` ± 6 min refused on all three functions | I | `web/convex/acceptance/digest.test.ts` | `web` | Yes |
