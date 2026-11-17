@@ -62,7 +62,14 @@ export const userIdForClerk = internalQuery({
       .query("users")
       .withIndex("byClerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
       .unique();
-    return user?._id ?? null;
+    if (user === null) return null;
+    const count = (
+      await ctx.db
+        .query("subscriptions")
+        .withIndex("byUser", (q) => q.eq("userId", user._id))
+        .collect()
+    ).length;
+    return { userId: user._id, full: count >= MAX_SUBSCRIPTIONS };
   },
 });
 
@@ -144,10 +151,13 @@ export const add = action({
   handler: async (ctx, { input }): Promise<{ status: "added" | "exists" | "full"; title: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (identity === null) throw new Error("Not signed in");
-    const userId = await ctx.runQuery(internal.subscriptions.userIdForClerk, {
+    const account = await ctx.runQuery(internal.subscriptions.userIdForClerk, {
       clerkUserId: identity.subject,
     });
-    if (userId === null) throw new Error("Your account isn't ready yet");
+    if (account === null) throw new Error("Your account isn't ready yet");
+    // Fail fast before any network work; insert re-checks the limit atomically.
+    if (account.full) return { status: "full", title: "" };
+    const { userId } = account;
     const feed = await resolveFeed(input);
     if (feed === null) {
       throw new Error("Couldn't find a feed there. Try the publication's home page URL.");

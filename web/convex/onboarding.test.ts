@@ -238,3 +238,20 @@ describe("subscriptions", () => {
     expect(parseSearchResults({ unexpected: true })).toEqual([]);
   });
 });
+
+describe("subscription limit", () => {
+  test("a full list is reported without fetching anything", async () => {
+    const { t, as } = await setup();
+    await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").first();
+      const { MAX_SUBSCRIPTIONS } = await import("./subscriptions");
+      for (let i = 0; i < MAX_SUBSCRIPTIONS; i++) {
+        await ctx.db.insert("subscriptions", { userId: user!._id, feedUrl: `https://p${i}.example/feed`, title: `P${i}`, addedAt: 0 });
+      }
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await as.action(api.subscriptions.add, { input: "bytebytego" })).toMatchObject({ status: "full" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

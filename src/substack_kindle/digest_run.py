@@ -32,6 +32,7 @@ from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit
 
 from . import http_transport, resend
+from .cover import CoverPost, render_cover
 from .job_epub import build_job_epub
 from .rss_fetch import fetch_posts
 from .whitelist_check import ensure_distinct_local_parts
@@ -153,6 +154,25 @@ def _ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
+WORDS_PER_MINUTE = 230
+
+
+def _cover(posts: list[Any], now: datetime, publications: int) -> bytes | None:
+    """Text cover (#78); newest post leads. A cover failure never blocks a digest."""
+    try:
+        newest_first = sorted(posts, key=lambda p: p.published, reverse=True)
+        words = sum(len(p.markdown.split()) for p in posts)
+        return render_cover(
+            day=now.date(),
+            posts=[CoverPost(title=p.title, publication=p.sender) for p in newest_first],
+            publication_count=publications,
+            minutes=max(1, round(words / WORDS_PER_MINUTE)),
+        )
+    except Exception as exc:
+        print(f"digest: cover skipped: {type(exc).__name__}", file=sys.stderr)
+        return None
+
+
 def _digest_one(
     target: dict[str, Any],
     *,
@@ -197,11 +217,13 @@ def _digest_one(
     keys = "\n".join(p.guid for p in fresh)
     digest_key = f"digest-{user_id}-{hashlib.sha256(keys.encode()).hexdigest()[:16]}"
     title = f"Substack Digest · {now:%a %d %b %Y}"
+    publications = len({p.sender for p in fresh})
     epub_bytes = build_job_epub(
         [p.to_section() for p in fresh],
         book_title=title,
         identifier=f"urn:digest:{digest_key}",
-        subtitle=f"{len(fresh)} posts from {len({p.sender for p in fresh})} publications",
+        subtitle=f"{len(fresh)} posts from {publications} publications",
+        cover_image=_cover(fresh, now, publications),
     )
     send(
         epub_bytes=epub_bytes,

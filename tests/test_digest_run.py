@@ -135,6 +135,11 @@ def test_sends_only_new_posts_inside_the_window_from_the_users_sender():
     assert call["to"] == "reader@kindle.com"
     assert call["from_"] == "kindle+abcdefghijklmnopqrstuvwxyz@mail.example.com"
     assert call["epub_bytes"][:2] == b"PK"  # an EPUB (zip)
+    import io
+    import zipfile
+
+    names = zipfile.ZipFile(io.BytesIO(call["epub_bytes"])).namelist()
+    assert any(n.endswith("cover.jpg") for n in names)  # per-send cover (#78)
     assert call["idempotency_key"].startswith("digest-user1-")
 
     path, args = convex.mutations[0]

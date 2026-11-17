@@ -115,6 +115,9 @@ function KindleStep({ state }: { state: State }) {
   const confirmKindle = useMutation(api.account.confirmKindle);
   const [email, setEmail] = useState(state.kindleEmail ?? "");
   const [store, setStore] = useState(state.amazonStore);
+  // Follow the saved values when they change on the server (another tab or device).
+  useEffect(() => setEmail(state.kindleEmail ?? ""), [state.kindleEmail]);
+  useEffect(() => setStore(state.amazonStore), [state.amazonStore]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
