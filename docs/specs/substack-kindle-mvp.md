@@ -22,10 +22,11 @@ advertises a feed stores one subscription with the feed URL and the feed's title
 (`localhost`, `10.0.0.0/8`, `169.254.169.254`), or whose page has no feed is refused with "Couldn't find a feed
 there. Try the publication's home page URL." Nothing is stored.
 
-**AC-4: No duplicate subscriptions.** Adding a feed the user already has leaves exactly one subscription for that
-`(user, feedUrl)`.
+**AC-4: No duplicate subscriptions.** Adding a feed the user already has returns `status: "exists"` and leaves
+exactly one subscription for that `(user, feedUrl)`.
 
-**AC-5: Subscription cap.** A user who has 300 subscriptions cannot add a 301st.
+**AC-5: Subscription cap.** For a user with 300 subscriptions, adding another returns `status: "full"` and stores
+nothing.
 
 ## Journey stage: Kindle step
 
@@ -60,7 +61,9 @@ again, even if the feed lists it again or its content changes.
 
 **AC-13: Failure isolation and retry.** If sending to one user fails, the other users' digests still go out. The
 failed user gets no delivery records, so the next pass retries them. A retry of the same digest cannot send twice:
-the Resend idempotency key is derived from the user id and the set of post guids.
+the Resend idempotency key is derived from the user id and the set of post guids. This guarantee holds only while
+the post set is unchanged. If the send succeeded, recording failed and a new post has appeared since, the earlier posts
+are sent again: an accepted MVP limitation (spec R6, Q7).
 
 **AC-14: Digest structure.** The EPUB's first page shows the digest date. The table of contents lists every post
 title, grouped by publication. Post H1 headings become H2.
@@ -100,18 +103,18 @@ skill dispatches it on `/codex`). Those tests live in `tests/acceptance/` (pytes
 | AC | Test | Level | Where | CI job | Indep. |
 |---|---|---|---|---|---|
 | AC-1 | `requestDigest` with zero subscriptions throws | I | `web/convex/acceptance/onboarding.test.ts` | `web (typecheck + vitest)` | Yes |
-| AC-2 | `subscriptions.add` with faked fetch of a Substack home page stores feed URL and title | I | same | `web` | Yes |
+| AC-2 | `subscriptions.add` with faked fetch of a Substack home page returns `{status: "added", title}`; `subscriptions.list` shows the feed URL and title | I | same | `web` | Yes |
 | AC-3 | `add` with http, private-IP and no-feed inputs throws and stores nothing | I | same | `web` | Yes |
-| AC-4 | `add` twice → one row for `(user, feedUrl)` | I | same | `web` | Yes |
-| AC-5 | 300 rows seeded, `add` refused | I | same | `web` | Yes |
+| AC-4 | `add` twice → second returns `exists`; `list` has one row for the feed | I | same | `web` | Yes |
+| AC-5 | 300 rows seeded, `add` returns `full`; `list` still has 300 | I | same | `web` | Yes |
 | AC-6 | `normalizeKindleEmail` table (cases, spaces, wrong domain) and `setKindleEmail` error | U + I | `web/convex/acceptance/kindle.test.ts` | `web` | Yes |
-| AC-7 | `ensureSender` twice → same address; token matches `^[A-Z2-7]{26}$`; two users differ | I | same | `web` | Yes |
+| AC-7 | `ensureSender` twice, then `account.state.senderAddress` → same address both times; token matches `^[A-Z2-7]{26}$`; two users differ | I | same | `web` | Yes |
 | AC-8 | `sendTest` with fake Resend; second call within 60 s refused; `confirmKindle` before test refused; `setKindleEmail` clears `kindleConfirmedAt` | I | same | `web` | Yes |
 | AC-9 | `run_digests` with fake Convex, fake feeds (30 posts, 10 older than 7 days), fake send: one send, ≤25 posts, all in window, `from` = user sender | I | `tests/acceptance/test_digest_mvp.py` | `lint + test` | Yes |
 | AC-10 | feeds with only delivered posts → no send, summary `empty=1` | I | same | `lint + test` | Yes |
 | AC-11 | `digest:targets` at 12:59 and 13:16 UTC with `lastDigestAt` the day before → target only at 13:16, and not again after `recordDigest` | I | `web/convex/acceptance/digest.test.ts` | `web` | Yes |
 | AC-12 | post key in `deliveredKeys` is skipped even with changed body | I | `tests/acceptance/test_digest_mvp.py` | `lint + test` | Yes |
-| AC-13 | two targets, send raises for the first: second is sent, `recordDigest` never called for the first; the retry sends the same idempotency key (same user, same guids) | I | same | `lint + test` | Yes |
+| AC-13 | two targets, send raises for the first: second is sent, `recordDigest` never called for the first; the retry sends the same idempotency key (same user, same guids). Limitation scenario: send succeeds, `recordDigest` raises, a new post appears, and the next pass sends a different key that includes the earlier posts. Assert this as documented behaviour until Q7 is decided | I | same | `lint + test` | Yes |
 | AC-14 | build EPUB from 3 fixture posts across 2 publications; parse with `ebooklib`: date on first page, nav groups, no `<h1>` in post bodies | U | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
 | AC-18 | build with a fake cover renderer: EPUB has a `cover-image` manifest item, 1600×2560 JPEG; with a renderer that raises, the send still happens and the EPUB has no cover | I | `tests/acceptance/test_digest_epub.py` | `lint + test` | Yes |
 | AC-15 | bad signature and `issuedAt` ± 6 min refused on all three functions | I | `web/convex/acceptance/digest.test.ts` | `web` | Yes |

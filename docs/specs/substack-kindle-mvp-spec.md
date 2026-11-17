@@ -78,19 +78,21 @@ A digest target needs `confirmed` and at least one subscription.
 
 ## 3. Interfaces
 
-User-facing (Clerk identity required; all throw `Error("Not signed in")` without it):
+User-facing. Signed out, the queries return empty values (`account.state` → `null`, `subscriptions.list` → `[]`).
+Mutations and actions throw `Error("Not signed in")`, or "Your account isn't ready yet" before the Clerk webhook
+has created the user.
 
 | Function | Kind | Signature | Errors |
 |---|---|---|---|
-| `account.state` | query | `() → AccountState` | — |
-| `account.ensureSender` | mutation | `() → senderAddress` | "Could not allocate a unique sender token" |
+| `account.state` | query | `() → AccountState \| null`, where `AccountState = {email, senderAddress, kindleEmail, amazonStore, amazonStores, amazonUrl, testSentAt, kindleConfirmedAt, digestRequestedAt, lastDigestAt, subscriptionCount}` | — |
+| `account.ensureSender` | mutation, idempotent | `() → void`; read the address from `account.state.senderAddress` | "Could not allocate a unique sender token" |
 | `account.setKindleEmail` | mutation | `(kindleEmail, amazonStore?) → void` | "Enter your Send-to-Kindle address (it ends in @kindle.com)" |
 | `account.sendTest` | action, calls Resend synchronously | `() → void` | "Save your Kindle address first"; "A test was just sent; wait a minute before sending another" (60 s, `TEST_SEND_INTERVAL_MS`); "The test could not be sent. Try again in a minute." |
 | `account.confirmKindle` | mutation | `() → void` | "Send a test first" |
 | `account.requestDigest` | mutation | `() → void` | "Confirm your Kindle first"; "Add at least one publication first" |
-| `subscriptions.add` | action, fetches the page (8 s timeout) | `(input) → {feedUrl, title}` | "Couldn't find a feed there. Try the publication's home page URL." |
+| `subscriptions.add` | action, fetches the page (8 s timeout) | `(input) → {status: "added" \| "exists" \| "full", title}`; read the saved feed URL from `subscriptions.list` | "Couldn't find a feed there. Try the publication's home page URL." |
 | `subscriptions.search` | action, calls Substack's public search API | `(query) → SearchHit[]` | network errors surface as a generic message |
-| `subscriptions.list` / `remove` | query / mutation | `() → Subscription[]` / `(id) → void` | — |
+| `subscriptions.list` / `remove` | query / mutation | `() → {id, title, feedUrl}[]` sorted by title / `(id) → void` (no-op if not the caller's row) | — |
 
 Runner API (public Convex functions, HMAC-SHA256 over `PIPELINE_SHARED_SECRET`, `issuedAt` within ±5 min
 (`MAX_SKEW_MS`), constant-time compare; failure → `Error("Unauthorized")`):
@@ -115,8 +117,10 @@ public addresses only, ≤3 redirects, each hop re-checked, 20 s timeout) → ke
 `idempotency_key = digest-<userId>-<sha256(guids)[:16]>` → `recordDigest`.
 
 Transaction boundaries: each Convex mutation is one transaction. Send and record are not atomic. If the send
-succeeds and `recordDigest` fails, the next pass rebuilds the same set of guids, so Resend's idempotency key drops the
-duplicate, provided the retry happens inside Resend's idempotency window (24 hours).
+succeeds and `recordDigest` fails, the next pass re-reads the feeds and rebuilds the post set. Resend's idempotency
+key drops the duplicate **only if** that set is unchanged and the retry falls inside Resend's 24-hour window. If a new
+post appears in between, the key changes and the already-sent posts are sent again in the new digest (R6). Fixing
+this needs a persisted pending batch (Q7); the MVP accepts the limitation.
 
 External dependencies and failure behaviour:
 
@@ -161,7 +165,7 @@ External dependencies and failure behaviour:
 | R3 | GitHub `schedule` runs late or skips under load, breaking the first-digest promise | Technical | Medium × Medium | `workflow_dispatch` on request is a later option; measure lag for 1 week |
 | R4 | A user-supplied feed URL is used for SSRF | Security | Low × High | `check_public_https_url` on every hop; DNS rebinding between check and connect is not covered (accepted for MVP) |
 | R5 | `digest:targets` full scan exceeds Convex read limits as users grow | Technical | Low (Tim-first) × Medium | Add an index on a `nextDueAt` field past ~1,000 users |
-| R6 | Send succeeds, record fails, retry after 24 h sends a duplicate | Technical | Low × Low | Accept; Kindle shows two copies |
+| R6 | Send succeeds, `recordDigest` fails, and the retry re-sends those posts: after 24 h, or sooner if a new post changes the guid set and so the idempotency key | Technical | Low × Low | Accept for MVP; Kindle shows the posts twice. Q7: persist the pending batch before sending |
 | R7 | Kindle drops EPUBs over its size limit | External | Low × Medium | 25-post cap only: `digest_run` in #77 does not call `size_budget.py`. Add the check (Q6) |
 
 ## 7. Open questions
@@ -174,6 +178,7 @@ External dependencies and failure behaviour:
 | Q4 | Aha latency target | AC-9, NFR | Tim | before a second user |
 | Q5 | Re-send edited posts | AC-12 | Tim | before a second user |
 | Q6 | Wire `size_budget` into `digest_run` (it isn't today) | R7 | Eng | before the first real digest |
+| Q7 | Persist a pending batch before sending, so a send-then-record failure can't re-send? | R6 | Eng + Tim | before a second user |
 
 ## 8. Spec review (spec-review: technical accuracy and implementation readiness)
 
@@ -183,7 +188,7 @@ Run once on the first draft; the fixes are already applied above.
 NFRs 7, testing 8.
 - High: "Interfaces" first gave the idempotency key as per user and slot; #77 derives it from the user id and a hash of
   the post guids. Fixed in §3 and AC-13.
-- High: there was no transaction boundary for send → record. Added, with the Resend 24-hour window and R6.
+- High: there was no transaction boundary for send → record. Added, with the Resend 24-hour window, the changing-feed case (from PR review) and R6 / Q7.
 - Medium: the indexes had no queries listed. Added the index → query table, and the `targets` full scan as R5.
 - Medium: the NFRs had no numbers. Added p95 first-digest latency, runner duration and reliability.
 
